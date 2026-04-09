@@ -6,13 +6,14 @@ import type { Task } from '../types'
 
 export default function TaskList() {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [error, setError] = useState<string | null>(null)
   const sources = useRef<Map<string, EventSource>>(new Map())
 
   useEffect(() => {
     api.tasks.list().then(list => {
       setTasks(list)
       list.filter((t: Task) => t.status === 'running').forEach(subscribeToTask)
-    })
+    }).catch((e: any) => setError(e.message))
     return () => { sources.current.forEach(s => s.close()) }
   }, [])
 
@@ -25,11 +26,13 @@ export default function TaskList() {
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
       if (updated.status !== 'running') { es.close(); sources.current.delete(task.id) }
     }
+    es.onerror = () => { es.close(); sources.current.delete(task.id) }
   }
 
   return (
     <div>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 20 }}>Download Tasks</h1>
+      {error && <p style={{ color: '#dc2626', marginBottom: 16 }}>Error: {error}</p>}
       {tasks.length === 0
         ? <p style={{ color: '#9ca3af' }}>No tasks yet.</p>
         : (
@@ -37,7 +40,7 @@ export default function TaskList() {
             {tasks.map(t => (
               <div key={t.id} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, background: '#fff' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 600 }}>{t.type.replace(/_/g, ' ')}</span>
+                  <span style={{ fontWeight: 600 }}>{t.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                   <StatusBadge status={t.status} />
                 </div>
                 {t.status === 'running' && <ProgressBar value={t.progress} message={t.message} />}
