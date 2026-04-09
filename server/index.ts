@@ -10,8 +10,7 @@ import { exportsRouter } from './routes/exports.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export const REPOS_DIR = join(process.cwd(), 'data', 'repos')
-export const EXPORTS_DIR = join(process.cwd(), 'data', 'exports')
+export { REPOS_DIR, EXPORTS_DIR } from './config.js'
 
 export function createApp(dbPath = join(process.cwd(), 'data', 'db.sqlite')) {
   const db = createDb(dbPath)

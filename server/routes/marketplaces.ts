@@ -2,11 +2,12 @@ import { Router } from 'express'
 import type { Db } from '../db.js'
 import {
   addMarketplace,
+  refreshMarketplace,
   deleteMarketplace,
   listMarketplaces,
   getMarketplacePlugins,
 } from '../services/marketplace-service.js'
-import { REPOS_DIR } from '../index.js'
+import { REPOS_DIR } from '../config.js'
 
 export function marketplacesRouter(db: Db) {
   const router = Router()
@@ -31,9 +32,8 @@ export function marketplacesRouter(db: Db) {
   })
 
   router.post('/:id/refresh', (req, res) => {
-    const marketplace = db.prepare(`SELECT * FROM marketplaces WHERE id=?`).get(req.params.id) as any
-    if (!marketplace) return res.status(404).json({ error: 'Marketplace not found' })
-    const result = addMarketplace(db, marketplace.source_url, REPOS_DIR)
+    const result = refreshMarketplace(db, req.params.id, REPOS_DIR)
+    if (!result) return res.status(404).json({ error: 'Marketplace not found' })
     res.status(202).json(result)
   })
 

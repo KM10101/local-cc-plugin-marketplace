@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 import { rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import type { Db } from '../db.js'
-import { readPluginJson } from './plugin-service.js'
+import { readPluginJson, parseMarketplaceJson } from './plugin-service.js'
 import type { CloneWorkerMessage, ClonePluginResult } from '../workers/clone-worker.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -54,7 +54,63 @@ export function addMarketplace(db: Db, sourceUrl: string, reposDir: string): { m
       .run(err.message, now(), task_id)
   })
 
+  worker.on('exit', (code) => {
+    if (code !== 0) {
+      db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(marketplace_id)
+      db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
+        .run(`Worker exited with code ${code}`, now(), task_id)
+    }
+  })
+
   return { marketplace_id, task_id }
+}
+
+export function refreshMarketplace(db: Db, id: string, reposDir: string): { marketplace_id: string; task_id: string } | null {
+  const marketplace = db.prepare(`SELECT * FROM marketplaces WHERE id=?`).get(id) as { id: string; source_url: string; local_path: string } | undefined
+  if (!marketplace) return null
+
+  const task_id = uuid()
+
+  db.prepare(`UPDATE marketplaces SET status='cloning' WHERE id=?`).run(id)
+  db.prepare(`INSERT INTO tasks (id, type, status, marketplace_id, progress, created_at)
+    VALUES (?, 'clone_marketplace', 'running', ?, 0, ?)`
+  ).run(task_id, id, now())
+
+  const workerPath = join(__dirname, '..', 'workers', 'clone-worker.js')
+  const worker = new Worker(workerPath, {
+    workerData: { marketplaceId: id, sourceUrl: marketplace.source_url, reposDir },
+  })
+
+  worker.on('message', async (msg: CloneWorkerMessage) => {
+    if (msg.type === 'progress') {
+      db.prepare(`UPDATE tasks SET progress=?, message=? WHERE id=?`)
+        .run(msg.progress, msg.message, task_id)
+    } else if (msg.type === 'done') {
+      await persistCloneResults(db, id, msg.gitSha, msg.plugins)
+      db.prepare(`UPDATE tasks SET status='completed', progress=100, completed_at=? WHERE id=?`)
+        .run(now(), task_id)
+    } else if (msg.type === 'error') {
+      db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(id)
+      db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
+        .run(msg.message, now(), task_id)
+    }
+  })
+
+  worker.on('error', (err) => {
+    db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(id)
+    db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
+      .run(err.message, now(), task_id)
+  })
+
+  worker.on('exit', (code) => {
+    if (code !== 0) {
+      db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(id)
+      db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
+        .run(`Worker exited with code ${code}`, now(), task_id)
+    }
+  })
+
+  return { marketplace_id: id, task_id }
 }
 
 async function persistCloneResults(db: Db, marketplace_id: string, gitSha: string, plugins: ClonePluginResult[]) {
@@ -64,7 +120,6 @@ async function persistCloneResults(db: Db, marketplace_id: string, gitSha: strin
   let description: string | null = null
   let owner: string | null = null
   try {
-    const { parseMarketplaceJson } = await import('./plugin-service.js')
     const meta = await parseMarketplaceJson(marketplace.local_path)
     name = meta.name || name
     description = meta.description
