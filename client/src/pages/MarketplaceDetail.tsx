@@ -10,6 +10,7 @@ export default function MarketplaceDetail() {
   const [plugins, setPlugins] = useState<Plugin[]>([])
   const [loadingPlugins, setLoadingPlugins] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [pluginsError, setPluginsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -19,7 +20,7 @@ export default function MarketplaceDetail() {
     setLoadingPlugins(true)
     api.marketplaces.plugins(id)
       .then(setPlugins)
-      .catch((e: any) => setError(e.message))
+      .catch((e: any) => setPluginsError(e.message))
       .finally(() => setLoadingPlugins(false))
   }, [id])
 
@@ -37,9 +38,11 @@ export default function MarketplaceDetail() {
         {marketplace.last_updated && ` · updated ${new Date(marketplace.last_updated).toLocaleDateString()}`}
       </p>
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Plugins ({plugins.length})</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Plugins{!loadingPlugins && ` (${plugins.length})`}</h2>
       {loadingPlugins
         ? <p style={{ color: '#9ca3af' }}>Loading plugins…</p>
+        : pluginsError
+        ? <p style={{ color: '#dc2626' }}>Error: {pluginsError}</p>
         : plugins.length === 0
         ? <p style={{ color: '#9ca3af' }}>No plugins found.</p>
         : (
