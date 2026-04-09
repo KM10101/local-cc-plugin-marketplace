@@ -3,3 +3,5 @@ dist/
 data/repos/
 data/exports/
 data/db.sqlite
+!data/repos/.gitkeep
+!data/exports/.gitkeep
