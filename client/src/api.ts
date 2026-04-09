@@ -1,3 +1,5 @@
+import type { Marketplace, Plugin, Task, Export } from './types'
+
 const BASE = '/api'
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -13,24 +15,24 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   marketplaces: {
-    list: () => req<any[]>('GET', '/marketplaces'),
-    add: (source_url: string) => req<any>('POST', '/marketplaces', { source_url }),
+    list: () => req<Marketplace[]>('GET', '/marketplaces'),
+    add: (source_url: string) => req<{ marketplace_id: string; task_id: string }>('POST', '/marketplaces', { source_url }),
     delete: (id: string) => req<void>('DELETE', `/marketplaces/${id}`),
-    refresh: (id: string) => req<any>('POST', `/marketplaces/${id}/refresh`),
-    plugins: (id: string) => req<any[]>('GET', `/marketplaces/${id}/plugins`),
+    refresh: (id: string) => req<{ marketplace_id: string; task_id: string }>('POST', `/marketplaces/${id}/refresh`),
+    plugins: (id: string) => req<Plugin[]>('GET', `/marketplaces/${id}/plugins`),
   },
   plugins: {
-    get: (id: string) => req<any>('GET', `/plugins/${id}`),
+    get: (id: string) => req<Plugin>('GET', `/plugins/${id}`),
   },
   tasks: {
-    list: () => req<any[]>('GET', '/tasks'),
+    list: () => req<Task[]>('GET', '/tasks'),
     events: (id: string) => new EventSource(`/api/tasks/${id}/events`),
   },
   exports: {
-    list: () => req<any[]>('GET', '/exports'),
-    get: (id: string) => req<any>('GET', `/exports/${id}`),
+    list: () => req<Export[]>('GET', '/exports'),
+    get: (id: string) => req<Export>('GET', `/exports/${id}`),
     create: (name: string, selected_content: Record<string, string[]>) =>
-      req<any>('POST', '/exports', { name, selected_content }),
+      req<{ export_id: string }>('POST', '/exports', { name, selected_content }),
     delete: (id: string) => req<void>('DELETE', `/exports/${id}`),
     events: (id: string) => new EventSource(`/api/exports/${id}/events`),
     downloadUrl: (id: string) => `/api/exports/${id}/download`,
