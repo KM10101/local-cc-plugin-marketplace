@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
 import { ProgressBar } from '../components/ProgressBar'
@@ -9,7 +9,6 @@ export default function ExportList() {
   const [exports, setExports] = useState<Export[]>([])
   const [error, setError] = useState<string | null>(null)
   const sources = useRef<Map<string, EventSource>>(new Map())
-  const nav = useNavigate()
 
   useEffect(() => {
     load()
@@ -37,9 +36,12 @@ export default function ExportList() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this export?')) return
-    api.exports.delete(id)
-      .then(() => setExports(prev => prev.filter(e => e.id !== id)))
-      .catch((e: any) => setError(e.message))
+    try {
+      await api.exports.delete(id)
+      setExports(prev => prev.filter(e => e.id !== id))
+    } catch (e: any) {
+      setError(e.message)
+    }
   }
 
   return (
@@ -60,7 +62,8 @@ export default function ExportList() {
         : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {exports.map(e => {
-              const content: Record<string, string[]> = JSON.parse(e.selected_content || '{}')
+              let content: Record<string, string[]> = {}
+              try { content = JSON.parse(e.selected_content || '{}') } catch { /* keep empty */ }
               const marketplaceCount = Object.keys(content).length
               const pluginCount = Object.values(content).flat().length
               return (
