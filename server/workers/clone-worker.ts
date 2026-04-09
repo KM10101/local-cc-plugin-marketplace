@@ -42,6 +42,11 @@ async function getHeadSha(repoPath: string): Promise<string | null> {
 async function run() {
   const { marketplaceId, sourceUrl, reposDir } = workerData as CloneWorkerInput
 
+  if (!marketplaceId || !sourceUrl || !reposDir) {
+    post({ type: 'error', message: 'Invalid workerData: marketplaceId, sourceUrl, and reposDir are required' })
+    return
+  }
+
   const marketplaceDir = join(reposDir, 'marketplaces', marketplaceId)
 
   try {
@@ -50,7 +55,7 @@ async function run() {
 
     await mkdir(join(reposDir, 'marketplaces'), { recursive: true })
 
-    if (existsSync(marketplaceDir)) {
+    if (existsSync(join(marketplaceDir, '.git'))) {
       // Already cloned — pull latest
       const git = simpleGit(marketplaceDir)
       await git.pull()
@@ -95,12 +100,29 @@ async function run() {
         message: `Cloning plugin ${i + 1}/${externalPlugins.length}: ${plugin.name}`,
       })
 
+      if (!plugin.source_url) {
+        post({
+          type: 'progress',
+          progress: progressPct,
+          message: `Warning: skipping ${plugin.name} - no source URL`,
+        })
+        results.push({
+          name: plugin.name,
+          source_type: 'external',
+          source_url: null,
+          local_path: pluginDir,
+          relative_path: plugin.relative_path,
+          git_commit_sha: null,
+        })
+        continue
+      }
+
       try {
-        if (existsSync(pluginDir)) {
+        if (existsSync(join(pluginDir, '.git'))) {
           const git = simpleGit(pluginDir)
           await git.pull()
         } else {
-          await simpleGit().clone(plugin.source_url!, pluginDir)
+          await simpleGit().clone(plugin.source_url, pluginDir)
         }
         const sha = await getHeadSha(pluginDir)
         results.push({
