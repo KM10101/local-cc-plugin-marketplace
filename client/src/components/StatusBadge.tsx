@@ -11,7 +11,7 @@ const colors: Record<Status, { bg: string; text: string }> = {
   failed:    { bg: '#fee2e2', text: '#dc2626' },
 }
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: { status: Status | string }) {
   const color = colors[status as Status] ?? { bg: '#f3f4f6', text: '#6b7280' }
   return (
     <span style={{

@@ -2,7 +2,15 @@ import { StatusBadge } from './StatusBadge'
 import type { Plugin } from '../types'
 
 export function PluginCard({ plugin: p }: { plugin: Plugin }) {
-  const keywords: string[] = p.keywords ? JSON.parse(p.keywords) : []
+  let keywords: string[] = []
+  if (p.keywords) {
+    try {
+      const parsed = JSON.parse(p.keywords)
+      if (Array.isArray(parsed)) keywords = parsed
+    } catch {
+      // malformed keywords — render without them
+    }
+  }
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, background: '#fff' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -29,8 +37,7 @@ export function PluginCard({ plugin: p }: { plugin: Plugin }) {
       )}
       {p.homepage && (
         <a href={p.homepage} target="_blank" rel="noreferrer"
-           style={{ display: 'block', marginTop: 8, fontSize: 12, color: '#2563eb' }}
-           onClick={e => e.stopPropagation()}>
+           style={{ display: 'block', marginTop: 8, fontSize: 12, color: '#2563eb' }}>
           Homepage →
         </a>
       )}
