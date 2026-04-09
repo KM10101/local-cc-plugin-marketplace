@@ -28,7 +28,12 @@ export interface MarketplaceJsonResult {
 
 export async function readPluginJson(pluginDir: string): Promise<PluginJsonResult> {
   const raw = await readFile(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf-8')
-  const json = JSON.parse(raw)
+  let json: any
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw new Error(`Failed to parse plugin.json in ${pluginDir}: invalid JSON`)
+  }
   return {
     name: json.name ?? '',
     version: json.version ?? null,
@@ -43,7 +48,12 @@ export async function readPluginJson(pluginDir: string): Promise<PluginJsonResul
 
 export async function parseMarketplaceJson(marketplaceDir: string): Promise<MarketplaceJsonResult> {
   const raw = await readFile(join(marketplaceDir, '.claude-plugin', 'marketplace.json'), 'utf-8')
-  const json = JSON.parse(raw)
+  let json: any
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw new Error(`Failed to parse marketplace.json in ${marketplaceDir}: invalid JSON`)
+  }
 
   const plugins: MarketplacePluginEntry[] = (json.plugins ?? []).map((p: any) => {
     if (typeof p.source === 'string') {
