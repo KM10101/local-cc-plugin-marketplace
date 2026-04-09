@@ -1,5 +1,10 @@
 import { Router } from 'express'
 import type { Db } from '../db.js'
+import type { Task, TaskStatus } from '../types.js'
+
+function isTerminal(status: TaskStatus): boolean {
+  return status === 'completed' || status === 'failed'
+}
 
 export function tasksRouter(db: Db) {
   const router = Router()
@@ -10,7 +15,7 @@ export function tasksRouter(db: Db) {
   })
 
   router.get('/:id/events', (req, res) => {
-    const task = db.prepare(`SELECT * FROM tasks WHERE id=?`).get(req.params.id) as any
+    const task = db.prepare(`SELECT * FROM tasks WHERE id=?`).get(req.params.id) as Task | undefined
     if (!task) return res.status(404).json({ error: 'Task not found' })
 
     res.setHeader('Content-Type', 'text/event-stream')
@@ -20,20 +25,19 @@ export function tasksRouter(db: Db) {
 
     const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`)
 
-    // Send current state immediately
-    const current = db.prepare(`SELECT * FROM tasks WHERE id=?`).get(req.params.id) as any
-    send(current)
+    // Send current state immediately (reuse already-fetched task)
+    send(task)
 
-    if (current.status === 'completed' || current.status === 'failed') {
+    if (isTerminal(task.status)) {
       res.end()
       return
     }
 
     const interval = setInterval(() => {
-      const updated = db.prepare(`SELECT * FROM tasks WHERE id=?`).get(req.params.id) as any
+      const updated = db.prepare(`SELECT * FROM tasks WHERE id=?`).get(req.params.id) as Task | undefined
       if (!updated) { clearInterval(interval); res.end(); return }
       send(updated)
-      if (updated.status === 'completed' || updated.status === 'failed') {
+      if (isTerminal(updated.status)) {
         clearInterval(interval)
         res.end()
       }
