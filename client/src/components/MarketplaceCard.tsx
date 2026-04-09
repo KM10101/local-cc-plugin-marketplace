@@ -29,6 +29,11 @@ export function MarketplaceCard({ marketplace: m, onDelete, onRefresh }: Props) 
       </div>
       {m.description && <p style={{ color: '#4b5563', fontSize: 14, margin: '8px 0 4px' }}>{m.description}</p>}
       <p style={{ color: '#9ca3af', fontSize: 12, margin: '4px 0' }}>{m.source_url}</p>
+      {m.last_updated && (
+        <p style={{ color: '#9ca3af', fontSize: 12, margin: '2px 0' }}>
+          Updated {new Date(m.last_updated).toLocaleDateString()}
+        </p>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
         <span style={{ color: '#6b7280', fontSize: 13 }}>{m.plugin_count ?? 0} plugins</span>
         <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>

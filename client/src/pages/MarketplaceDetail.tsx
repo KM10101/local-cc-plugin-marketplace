@@ -8,13 +8,22 @@ export default function MarketplaceDetail() {
   const { id } = useParams<{ id: string }>()
   const [marketplace, setMarketplace] = useState<Marketplace | null>(null)
   const [plugins, setPlugins] = useState<Plugin[]>([])
+  const [loadingPlugins, setLoadingPlugins] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
-    api.marketplaces.list().then(list => setMarketplace(list.find((m) => m.id === id) ?? null))
-    api.marketplaces.plugins(id).then(setPlugins)
+    api.marketplaces.list()
+      .then(list => setMarketplace(list.find((m) => m.id === id) ?? null))
+      .catch((e: any) => setError(e.message))
+    setLoadingPlugins(true)
+    api.marketplaces.plugins(id)
+      .then(setPlugins)
+      .catch((e: any) => setError(e.message))
+      .finally(() => setLoadingPlugins(false))
   }, [id])
 
+  if (error) return <p style={{ color: '#dc2626' }}>Error: {error}</p>
   if (!marketplace) return <p>Loading…</p>
 
   return (
@@ -29,7 +38,9 @@ export default function MarketplaceDetail() {
       </p>
 
       <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Plugins ({plugins.length})</h2>
-      {plugins.length === 0
+      {loadingPlugins
+        ? <p style={{ color: '#9ca3af' }}>Loading plugins…</p>
+        : plugins.length === 0
         ? <p style={{ color: '#9ca3af' }}>No plugins found.</p>
         : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>

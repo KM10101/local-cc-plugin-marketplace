@@ -8,12 +8,15 @@ export default function MarketplaceList() {
   const [url, setUrl] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [])
 
   async function load() {
+    setLoading(true)
     try { setMarketplaces(await api.marketplaces.list()) }
     catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -57,7 +60,9 @@ export default function MarketplaceList() {
 
       {error && <p style={{ color: '#dc2626', marginBottom: 16 }}>{error}</p>}
 
-      {marketplaces.length === 0
+      {loading
+        ? <p style={{ color: '#9ca3af' }}>Loading…</p>
+        : marketplaces.length === 0
         ? <p style={{ color: '#9ca3af' }}>No marketplaces yet. Add one above.</p>
         : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
