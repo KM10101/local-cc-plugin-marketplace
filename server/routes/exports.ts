@@ -5,7 +5,7 @@ import { Worker } from 'worker_threads'
 import { rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import type { Db } from '../db.js'
-import { EXPORTS_DIR, REPOS_DIR } from '../config.js'
+import { EXPORTS_DIR } from '../config.js'
 import type { ExportWorkerMessage } from '../workers/export-worker.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -54,18 +54,20 @@ export function exportsRouter(db: Db) {
     ).run(exportId, exportName, JSON.stringify(selected_content), now())
 
     // Build marketplaces input for worker
-    const marketplacesInput = Object.entries(selected_content as Record<string, string[]>).map(([mId, pluginIds]) => {
+    const marketplacesInput = Object.entries(selected_content as Record<string, string[]>).flatMap(([mId, pluginIds]) => {
       const marketplace = db.prepare(`SELECT * FROM marketplaces WHERE id=?`).get(mId) as any
+      if (!marketplace) return []
       const plugins = pluginIds.map(pid => db.prepare(`SELECT * FROM plugins WHERE id=?`).get(pid) as any).filter(Boolean)
-      return {
+      return [{
         marketplaceLocalPath: marketplace.local_path,
+        marketplaceId: mId,
         marketplaceName: marketplace.name,
         selectedPlugins: plugins.map((p: any) => ({
           name: p.name,
           source_type: p.source_type,
           local_path: p.local_path,
         })),
-      }
+      }]
     })
 
     const workerPath = join(__dirname, '..', 'workers', 'export-worker.js')
