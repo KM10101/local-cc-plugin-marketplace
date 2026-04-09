@@ -16,12 +16,11 @@ export default function ExportDetail() {
     api.exports.get(id).then(async (e) => {
       setExp(e)
       const content: Record<string, string[]> = JSON.parse(e.selected_content)
-      const allPlugins: Plugin[] = []
-      for (const pluginIds of Object.values(content)) {
-        for (const pid of pluginIds) {
-          try { allPlugins.push(await api.plugins.get(pid)) } catch { /* skip deleted */ }
-        }
-      }
+      const pluginIds = Object.values(content).flat()
+      const results = await Promise.allSettled(pluginIds.map(pid => api.plugins.get(pid)))
+      const allPlugins = results
+        .filter((r): r is PromiseFulfilledResult<Plugin> => r.status === 'fulfilled')
+        .map(r => r.value)
       setPlugins(allPlugins)
     }).catch((e: any) => setError(e.message))
   }, [id])

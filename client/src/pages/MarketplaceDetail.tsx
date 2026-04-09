@@ -14,8 +14,8 @@ export default function MarketplaceDetail() {
 
   useEffect(() => {
     if (!id) return
-    api.marketplaces.list()
-      .then(list => setMarketplace(list.find((m) => m.id === id) ?? null))
+    api.marketplaces.get(id)
+      .then(setMarketplace)
       .catch((e: any) => setError(e.message))
     setLoadingPlugins(true)
     api.marketplaces.plugins(id)

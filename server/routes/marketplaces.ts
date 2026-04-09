@@ -16,6 +16,12 @@ export function marketplacesRouter(db: Db) {
     res.json(listMarketplaces(db))
   })
 
+  router.get('/:id', (req, res) => {
+    const marketplace = db.prepare('SELECT * FROM marketplaces WHERE id = ?').get(req.params.id)
+    if (!marketplace) return res.status(404).json({ error: 'Not found' })
+    res.json(marketplace)
+  })
+
   router.post('/', (req, res) => {
     const { source_url } = req.body
     if (!source_url || typeof source_url !== 'string') {

@@ -16,6 +16,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 export const api = {
   marketplaces: {
     list: () => req<Marketplace[]>('GET', '/marketplaces'),
+    get: (id: string) => req<Marketplace>('GET', `/marketplaces/${id}`),
     add: (source_url: string) => req<{ marketplace_id: string; task_id: string }>('POST', '/marketplaces', { source_url }),
     delete: (id: string) => req<void>('DELETE', `/marketplaces/${id}`),
     refresh: (id: string) => req<{ marketplace_id: string; task_id: string }>('POST', `/marketplaces/${id}/refresh`),

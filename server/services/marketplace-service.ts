@@ -12,6 +12,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 function now() { return new Date().toISOString() }
 function uuid() { return crypto.randomUUID() }
 
+function repoNameFromUrl(url: string): string {
+  const parts = url.replace(/\.git$/, '').split('/')
+  return parts[parts.length - 1] || url
+}
+
 export function addMarketplace(db: Db, sourceUrl: string, reposDir: string): { marketplace_id: string; task_id: string } {
   const marketplace_id = uuid()
   const task_id = uuid()
@@ -19,7 +24,7 @@ export function addMarketplace(db: Db, sourceUrl: string, reposDir: string): { m
 
   db.prepare(`INSERT INTO marketplaces (id, name, source_url, local_path, status, created_at)
     VALUES (?, ?, ?, ?, 'pending', ?)`
-  ).run(marketplace_id, sourceUrl, sourceUrl, localPath, now())
+  ).run(marketplace_id, repoNameFromUrl(sourceUrl), sourceUrl, localPath, now())
 
   db.prepare(`INSERT INTO tasks (id, type, status, marketplace_id, progress, created_at)
     VALUES (?, 'clone_marketplace', 'running', ?, 0, ?)`
@@ -29,6 +34,7 @@ export function addMarketplace(db: Db, sourceUrl: string, reposDir: string): { m
   const workerPath = join(__dirname, '..', 'workers', 'clone-worker.js')
   const worker = new Worker(workerPath, {
     workerData: { marketplaceId: marketplace_id, sourceUrl, reposDir },
+    execArgv: ['--import', 'tsx/esm'],
   })
 
   db.prepare(`UPDATE marketplaces SET status='cloning' WHERE id=?`).run(marketplace_id)
@@ -79,6 +85,7 @@ export function refreshMarketplace(db: Db, id: string, reposDir: string): { mark
   const workerPath = join(__dirname, '..', 'workers', 'clone-worker.js')
   const worker = new Worker(workerPath, {
     workerData: { marketplaceId: id, sourceUrl: marketplace.source_url, reposDir },
+    execArgv: ['--import', 'tsx/esm'],
   })
 
   worker.on('message', async (msg: CloneWorkerMessage) => {

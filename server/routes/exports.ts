@@ -73,6 +73,7 @@ export function exportsRouter(db: Db) {
     const workerPath = join(__dirname, '..', 'workers', 'export-worker.js')
     const worker = new Worker(workerPath, {
       workerData: { exportId, exportName, marketplaces: marketplacesInput, exportsDir: EXPORTS_DIR },
+      execArgv: ['--import', 'tsx/esm'],
     })
 
     worker.on('message', (msg: ExportWorkerMessage) => {
