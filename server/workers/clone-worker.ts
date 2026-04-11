@@ -3,7 +3,9 @@ import { simpleGit } from 'simple-git'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { mkdir, rm } from 'fs/promises'
-import { parseMarketplaceJson } from '../services/plugin-service.js'
+import { parseMarketplaceJson, type MarketplacePluginEntry } from '../services/plugin-service.js'
+
+export type ProgressCallback = (message: string, percent?: number) => void
 
 export interface CloneWorkerInput {
   mode: 'marketplace' | 'plugin'
@@ -12,26 +14,74 @@ export interface CloneWorkerInput {
   pluginId?: string
   sourceUrl: string
   branch?: string
-  reposDir?: string    // for marketplace mode
-  pluginDir?: string   // for plugin mode
+  reposDir?: string
+  pluginDir?: string
+  pluginName?: string
+  sourceFormat?: string
+  subdirPath?: string
 }
 
 export type CloneWorkerMessage =
   | { type: 'progress'; progress: number; message: string }
-  | { type: 'done'; gitSha: string; plugins: ClonePluginResult[] }
+  | { type: 'done'; gitSha: string; plugins: ClonePluginResult[]; pluginEntries?: MarketplacePluginEntry[] }
   | { type: 'error'; message: string }
+  | { type: 'create_child_tasks'; tasks: ChildTaskEntry[] }
+
+export interface ChildTaskEntry {
+  id: string
+  type: string
+  marketplace_id?: string
+  plugin_id?: string
+  repo_url?: string
+  branch?: string
+  plugin_name?: string
+  source_format?: string
+  subdir_path?: string
+}
 
 export interface ClonePluginResult {
   name: string
   source_type: 'local' | 'external'
+  source_format: string
   source_url: string | null
   local_path: string
   relative_path: string
   git_commit_sha: string | null
+  subdir_path: string | null
 }
 
 function post(msg: CloneWorkerMessage) {
   parentPort?.postMessage(msg)
+}
+
+function parseGitProgress(line: string, baseProgress: number, maxProgress: number): { message: string; progress: number } | null {
+  const trimmed = line.trim()
+  if (!trimmed || trimmed.length < 3) return null
+
+  const pctMatch = trimmed.match(/(\d+)%/)
+  if (pctMatch) {
+    const pct = parseInt(pctMatch[1], 10)
+    const range = maxProgress - baseProgress
+    let phaseStart = 0
+    let phaseEnd = 1
+
+    if (trimmed.startsWith('Enumerating') || trimmed.startsWith('remote: Enumerating')) {
+      phaseStart = 0; phaseEnd = 0.05
+    } else if (trimmed.startsWith('Counting') || trimmed.startsWith('remote: Counting')) {
+      phaseStart = 0.05; phaseEnd = 0.15
+    } else if (trimmed.startsWith('Compressing') || trimmed.startsWith('remote: Compressing')) {
+      phaseStart = 0.15; phaseEnd = 0.25
+    } else if (trimmed.startsWith('Receiving')) {
+      phaseStart = 0.25; phaseEnd = 0.75
+    } else if (trimmed.startsWith('Resolving')) {
+      phaseStart = 0.75; phaseEnd = 1.0
+    }
+
+    const mapped = baseProgress + range * (phaseStart + (phaseEnd - phaseStart) * (pct / 100))
+    return { message: trimmed, progress: Math.round(mapped) }
+  }
+
+  return { message: trimmed, progress: baseProgress }
 }
 
 async function getHeadSha(repoPath: string): Promise<string | null> {
@@ -53,32 +103,106 @@ async function isValidGitRepo(dir: string): Promise<boolean> {
   } catch { return false }
 }
 
-async function cloneOrPull(sourceUrl: string, targetDir: string, branch?: string): Promise<void> {
+async function cloneOrPull(sourceUrl: string, targetDir: string, branch?: string, onProgress?: ProgressCallback): Promise<void> {
   if (await isValidGitRepo(targetDir)) {
-    // Incremental update: fetch and pull
     const git = simpleGit(targetDir)
+    if (onProgress) {
+      git.outputHandler((_command, _stdout, stderr) => {
+        stderr.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split(/\r|\n/).filter(Boolean)
+          for (const line of lines) {
+            onProgress(line.trim())
+          }
+        })
+      })
+    }
     await git.fetch('origin')
     if (branch) {
       try {
         await git.checkout(branch)
       } catch {
-        // Branch doesn't exist locally, create it tracking origin/branch
         await git.checkoutBranch(branch, `origin/${branch}`)
       }
     }
     await git.pull()
   } else {
-    // Clean up incomplete clone if directory exists
     if (existsSync(targetDir)) {
       await rm(targetDir, { recursive: true, force: true })
     }
-    // Fresh clone
-    const cloneOptions: string[] = []
+    const git = simpleGit()
+    if (onProgress) {
+      git.outputHandler((_command, _stdout, stderr) => {
+        stderr.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split(/\r|\n/).filter(Boolean)
+          for (const line of lines) {
+            onProgress(line.trim())
+          }
+        })
+      })
+    }
+    const cloneOptions: string[] = ['--progress']
     if (branch) {
       cloneOptions.push('--branch', branch)
     }
-    await simpleGit().clone(sourceUrl, targetDir, cloneOptions)
+    await git.clone(sourceUrl, targetDir, cloneOptions)
   }
+}
+
+async function cloneSubdir(
+  sourceUrl: string,
+  targetDir: string,
+  subdirPath: string,
+  ref?: string,
+  onProgress?: ProgressCallback
+): Promise<void> {
+  if (await isValidGitRepo(targetDir)) {
+    const git = simpleGit(targetDir)
+    if (onProgress) {
+      git.outputHandler((_command, _stdout, stderr) => {
+        stderr.on('data', (chunk: Buffer) => {
+          const lines = chunk.toString().split(/\r|\n/).filter(Boolean)
+          for (const line of lines) {
+            onProgress(line.trim())
+          }
+        })
+      })
+    }
+    await git.fetch('origin')
+    if (ref) {
+      try {
+        await git.checkout(ref)
+      } catch {
+        await git.checkoutBranch(ref, `origin/${ref}`)
+      }
+    }
+    await git.pull()
+    return
+  }
+
+  if (existsSync(targetDir)) {
+    await rm(targetDir, { recursive: true, force: true })
+  }
+
+  const git = simpleGit()
+  if (onProgress) {
+    git.outputHandler((_command, _stdout, stderr) => {
+      stderr.on('data', (chunk: Buffer) => {
+        const lines = chunk.toString().split(/\r|\n/).filter(Boolean)
+        for (const line of lines) {
+          onProgress(line.trim())
+        }
+      })
+    })
+  }
+
+  const cloneArgs = ['--filter=blob:none', '--sparse', '--progress']
+  if (ref) {
+    cloneArgs.push('--branch', ref)
+  }
+  await git.clone(sourceUrl, targetDir, cloneArgs)
+
+  const repoGit = simpleGit(targetDir)
+  await repoGit.raw(['sparse-checkout', 'set', subdirPath])
 }
 
 async function runMarketplace() {
@@ -92,105 +216,62 @@ async function runMarketplace() {
   const marketplaceDir = join(reposDir, 'marketplaces', marketplaceId)
 
   try {
-    // Step 1: Clone/pull marketplace repo
     post({ type: 'progress', progress: 5, message: `Cloning marketplace from ${sourceUrl} (branch: ${branch || 'default'})` })
 
     await mkdir(join(reposDir, 'marketplaces'), { recursive: true })
 
-    await cloneOrPull(sourceUrl, marketplaceDir, branch)
+    await cloneOrPull(sourceUrl, marketplaceDir, branch, (msg) => {
+      const parsed = parseGitProgress(msg, 5, 40)
+      if (parsed) post({ type: 'progress', progress: parsed.progress, message: parsed.message })
+    })
 
     post({ type: 'progress', progress: 40, message: 'Marketplace cloned, reading plugin list' })
 
-    // Step 2: Parse marketplace.json
     const marketplaceMeta = await parseMarketplaceJson(marketplaceDir)
     const externalPlugins = marketplaceMeta.plugins.filter(p => p.source_type === 'external')
     const localPlugins = marketplaceMeta.plugins.filter(p => p.source_type === 'local')
 
-    const results: ClonePluginResult[] = []
+    const localResults: ClonePluginResult[] = localPlugins.map(p => ({
+      name: p.name,
+      source_type: 'local' as const,
+      source_format: 'local',
+      source_url: null,
+      local_path: p.relative_path === '.' ? marketplaceDir : join(marketplaceDir, p.relative_path),
+      relative_path: p.relative_path,
+      git_commit_sha: null,
+      subdir_path: null,
+    }))
 
-    // Local plugins already exist in marketplace repo
-    for (const p of localPlugins) {
-      const localPath = join(marketplaceDir, p.relative_path)
-      results.push({
-        name: p.name,
-        source_type: 'local',
-        source_url: null,
-        local_path: localPath,
-        relative_path: p.relative_path,
-        git_commit_sha: null,
-      })
-    }
-
-    // Step 3: Clone external plugins
-    const pluginsBaseDir = join(reposDir, 'plugins', marketplaceId)
-    await mkdir(pluginsBaseDir, { recursive: true })
-
-    for (let i = 0; i < externalPlugins.length; i++) {
-      const plugin = externalPlugins[i]
-      const pluginDir = join(pluginsBaseDir, plugin.name)
-      const progressPct = 40 + Math.round(((i + 1) / externalPlugins.length) * 55)
-
+    if (externalPlugins.length > 0) {
       post({
-        type: 'progress',
-        progress: progressPct,
-        message: `Cloning plugin ${i + 1}/${externalPlugins.length}: ${plugin.name}`,
+        type: 'create_child_tasks',
+        tasks: externalPlugins.map(p => ({
+          id: crypto.randomUUID(),
+          type: 'clone_plugin',
+          marketplace_id: marketplaceId,
+          repo_url: p.source_url!,
+          branch: p.ref ?? undefined,
+          plugin_name: p.name,
+          source_format: p.source_format,
+          subdir_path: p.subdir_path ?? undefined,
+        })),
       })
-
-      if (!plugin.source_url) {
-        post({
-          type: 'progress',
-          progress: progressPct,
-          message: `Warning: skipping ${plugin.name} - no source URL`,
-        })
-        results.push({
-          name: plugin.name,
-          source_type: 'external',
-          source_url: null,
-          local_path: pluginDir,
-          relative_path: plugin.relative_path,
-          git_commit_sha: null,
-        })
-        continue
-      }
-
-      try {
-        await cloneOrPull(plugin.source_url, pluginDir)
-        const sha = await getHeadSha(pluginDir)
-        results.push({
-          name: plugin.name,
-          source_type: 'external',
-          source_url: plugin.source_url,
-          local_path: pluginDir,
-          relative_path: plugin.relative_path,
-          git_commit_sha: sha,
-        })
-      } catch (err: any) {
-        // Non-fatal: record error but continue with other plugins
-        post({
-          type: 'progress',
-          progress: progressPct,
-          message: `Warning: failed to clone ${plugin.name}: ${err.message}`,
-        })
-        results.push({
-          name: plugin.name,
-          source_type: 'external',
-          source_url: plugin.source_url,
-          local_path: pluginDir,
-          relative_path: plugin.relative_path,
-          git_commit_sha: null,
-        })
-      }
     }
 
     const marketplaceGitSha = await getHeadSha(marketplaceDir)
-    post({ type: 'done', gitSha: marketplaceGitSha ?? '', plugins: results })
+    post({
+      type: 'done',
+      gitSha: marketplaceGitSha ?? '',
+      plugins: localResults,
+      pluginEntries: marketplaceMeta.plugins,
+    })
   } catch (err: any) {
     post({ type: 'error', message: err.message ?? String(err) })
   }
 }
 
 async function runPlugin() {
-  const { sourceUrl, branch, pluginDir, pluginId } = workerData as CloneWorkerInput
+  const { sourceUrl, branch, pluginDir, pluginName, sourceFormat, subdirPath } = workerData as CloneWorkerInput
 
   if (!sourceUrl || !pluginDir) {
     post({ type: 'error', message: 'Invalid workerData: sourceUrl and pluginDir are required' })
@@ -198,13 +279,23 @@ async function runPlugin() {
   }
 
   try {
-    post({ type: 'progress', progress: 10, message: `Cloning plugin from ${sourceUrl} (branch: ${branch || 'default'})` })
+    const label = pluginName ?? sourceUrl
+    post({ type: 'progress', progress: 5, message: `Cloning ${label} from ${sourceUrl} (branch: ${branch || 'default'})` })
 
     await mkdir(pluginDir, { recursive: true })
 
-    await cloneOrPull(sourceUrl, pluginDir, branch)
+    const onProgress = (msg: string) => {
+      const parsed = parseGitProgress(msg, 5, 90)
+      if (parsed) post({ type: 'progress', progress: parsed.progress, message: parsed.message })
+    }
 
-    post({ type: 'progress', progress: 90, message: 'Plugin cloned, reading commit SHA' })
+    if (sourceFormat === 'git-subdir' && subdirPath) {
+      await cloneSubdir(sourceUrl, pluginDir, subdirPath, branch, onProgress)
+    } else {
+      await cloneOrPull(sourceUrl, pluginDir, branch, onProgress)
+    }
+
+    post({ type: 'progress', progress: 95, message: 'Clone complete, reading commit SHA' })
 
     const sha = await getHeadSha(pluginDir)
 
