@@ -5,25 +5,26 @@ export type Db = InstanceType<typeof Database>
 export function createDb(path: string): Db {
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS marketplaces (
       id TEXT PRIMARY KEY,
+      repo_url TEXT NOT NULL,
+      branch TEXT NOT NULL DEFAULT 'main',
       name TEXT NOT NULL,
-      source_url TEXT NOT NULL,
       local_path TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       description TEXT,
       owner TEXT,
       git_commit_sha TEXT,
       last_updated TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      UNIQUE(repo_url, branch)
     );
 
     CREATE TABLE IF NOT EXISTS plugins (
       id TEXT PRIMARY KEY,
-      marketplace_id TEXT NOT NULL REFERENCES marketplaces(id) ON DELETE CASCADE,
+      marketplace_id TEXT NOT NULL,
       name TEXT NOT NULL,
       version TEXT,
       author TEXT,
@@ -42,9 +43,13 @@ export function createDb(path: string): Db {
 
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
+      parent_task_id TEXT,
       type TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'running',
-      marketplace_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      marketplace_id TEXT,
+      repo_url TEXT,
+      branch TEXT,
+      plugin_id TEXT,
       progress INTEGER NOT NULL DEFAULT 0,
       message TEXT,
       created_at TEXT NOT NULL,

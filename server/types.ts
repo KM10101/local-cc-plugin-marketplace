@@ -1,12 +1,14 @@
 export type MarketplaceStatus = 'pending' | 'cloning' | 'ready' | 'error'
 export type PluginStatus = 'pending' | 'cloning' | 'ready' | 'error'
-export type TaskStatus = 'running' | 'completed' | 'failed'
+export type TaskStatus = 'queued' | 'running' | 'stopped' | 'completed' | 'failed'
+export type TaskType = 'clone_marketplace' | 'clone_plugin'
 export type ExportStatus = 'packaging' | 'ready' | 'failed'
 
 export interface Marketplace {
   id: string
+  repo_url: string
+  branch: string
   name: string
-  source_url: string
   local_path: string
   status: MarketplaceStatus
   description: string | null
@@ -24,7 +26,7 @@ export interface Plugin {
   author: string | null
   author_url: string | null
   description: string | null
-  keywords: string | null   // JSON array string
+  keywords: string | null
   homepage: string | null
   license: string | null
   source_type: 'local' | 'external'
@@ -37,13 +39,18 @@ export interface Plugin {
 
 export interface Task {
   id: string
-  type: 'clone_marketplace'
+  parent_task_id: string | null
+  type: TaskType
   status: TaskStatus
-  marketplace_id: string
+  marketplace_id: string | null
+  repo_url: string | null
+  branch: string | null
+  plugin_id: string | null
   progress: number
   message: string | null
   created_at: string
   completed_at: string | null
+  children?: Task[]
 }
 
 export interface Export {
@@ -52,7 +59,7 @@ export interface Export {
   status: ExportStatus
   progress: number
   message: string | null
-  selected_content: string   // JSON: { marketplaceId: pluginId[] }
+  selected_content: string
   zip_path: string | null
   zip_size: number | null
   created_at: string

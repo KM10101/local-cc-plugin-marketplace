@@ -28,7 +28,7 @@ export function MarketplaceCard({ marketplace: m, onDelete, onRefresh }: Props) 
         <StatusBadge status={m.status} />
       </div>
       {m.description && <p style={{ color: '#4b5563', fontSize: 14, margin: '8px 0 4px' }}>{m.description}</p>}
-      <p style={{ color: '#9ca3af', fontSize: 12, margin: '4px 0' }}>{m.source_url}</p>
+      <p style={{ color: '#9ca3af', fontSize: 12, margin: '4px 0' }}>{m.repo_url}</p>
       {m.last_updated && (
         <p style={{ color: '#9ca3af', fontSize: 12, margin: '2px 0' }}>
           Updated {new Date(m.last_updated).toLocaleDateString()}

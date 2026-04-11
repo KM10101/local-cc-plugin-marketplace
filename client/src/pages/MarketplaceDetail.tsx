@@ -34,7 +34,7 @@ export default function MarketplaceDetail() {
       {marketplace.owner && <p style={{ color: '#6b7280', marginBottom: 4 }}>by {marketplace.owner}</p>}
       {marketplace.description && <p style={{ color: '#4b5563', marginBottom: 8 }}>{marketplace.description}</p>}
       <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 24 }}>
-        {marketplace.source_url} · commit {marketplace.git_commit_sha?.slice(0, 8) ?? 'unknown'}
+        {marketplace.repo_url} · commit {marketplace.git_commit_sha?.slice(0, 8) ?? 'unknown'}
         {marketplace.last_updated && ` · updated ${new Date(marketplace.last_updated).toLocaleDateString()}`}
       </p>
 

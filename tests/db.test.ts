@@ -17,7 +17,7 @@ afterEach(async () => {
 })
 
 describe('createDb', () => {
-  it('creates all required tables', () => {
+  it('creates all 4 tables', () => {
     const tables = db.prepare(
       `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
     ).all() as { name: string }[]
@@ -33,5 +33,63 @@ describe('createDb', () => {
     const db2 = createDb(TEST_DB_PATH)
     db2.close()
     db = createDb(TEST_DB_PATH)
+  })
+
+  it('marketplaces table has repo_url and branch columns', () => {
+    const cols = db.prepare(`PRAGMA table_info(marketplaces)`).all() as { name: string }[]
+    const colNames = cols.map(c => c.name)
+    expect(colNames).toContain('repo_url')
+    expect(colNames).toContain('branch')
+    expect(colNames).not.toContain('source_url')
+  })
+
+  it('enforces UNIQUE(repo_url, branch) constraint', () => {
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO marketplaces (id, repo_url, branch, name, local_path, status, created_at)
+      VALUES ('m1', 'https://github.com/test/repo', 'main', 'Test', '/tmp/test', 'pending', ?)
+    `).run(now)
+
+    expect(() => {
+      db.prepare(`
+        INSERT INTO marketplaces (id, repo_url, branch, name, local_path, status, created_at)
+        VALUES ('m2', 'https://github.com/test/repo', 'main', 'Test2', '/tmp/test2', 'pending', ?)
+      `).run(now)
+    }).toThrow()
+  })
+
+  it('allows same repo_url with different branches', () => {
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO marketplaces (id, repo_url, branch, name, local_path, status, created_at)
+      VALUES ('m1', 'https://github.com/test/repo', 'main', 'Test', '/tmp/test', 'pending', ?)
+    `).run(now)
+
+    expect(() => {
+      db.prepare(`
+        INSERT INTO marketplaces (id, repo_url, branch, name, local_path, status, created_at)
+        VALUES ('m2', 'https://github.com/test/repo', 'dev', 'Test Dev', '/tmp/test-dev', 'pending', ?)
+      `).run(now)
+    }).not.toThrow()
+  })
+
+  it('tasks table has parent_task_id, repo_url, branch, plugin_id columns', () => {
+    const cols = db.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[]
+    const colNames = cols.map(c => c.name)
+    expect(colNames).toContain('parent_task_id')
+    expect(colNames).toContain('repo_url')
+    expect(colNames).toContain('branch')
+    expect(colNames).toContain('plugin_id')
+  })
+
+  it('tasks default status is queued', () => {
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO tasks (id, type, created_at)
+      VALUES ('t1', 'clone_marketplace', ?)
+    `).run(now)
+
+    const task = db.prepare(`SELECT status FROM tasks WHERE id = 't1'`).get() as { status: string }
+    expect(task.status).toBe('queued')
   })
 })

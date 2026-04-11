@@ -1,12 +1,13 @@
 export type MarketplaceStatus = 'pending' | 'cloning' | 'ready' | 'error'
 export type PluginStatus = 'pending' | 'cloning' | 'ready' | 'error'
-export type TaskStatus = 'running' | 'completed' | 'failed'
+export type TaskStatus = 'queued' | 'running' | 'stopped' | 'completed' | 'failed'
 export type ExportStatus = 'packaging' | 'ready' | 'failed'
 
 export interface Marketplace {
   id: string
+  repo_url: string
+  branch: string
   name: string
-  source_url: string
   local_path: string
   status: MarketplaceStatus
   description: string | null
@@ -14,7 +15,8 @@ export interface Marketplace {
   git_commit_sha: string | null
   last_updated: string | null
   created_at: string
-  plugin_count?: number  // added by listMarketplaces query
+  plugin_count?: number
+  siblings?: { id: string; branch: string; status: MarketplaceStatus }[]
 }
 
 export interface Plugin {
@@ -38,13 +40,18 @@ export interface Plugin {
 
 export interface Task {
   id: string
+  parent_task_id: string | null
   type: string
   status: TaskStatus
-  marketplace_id: string
+  marketplace_id: string | null
+  repo_url: string | null
+  branch: string | null
+  plugin_id: string | null
   progress: number
   message: string | null
   created_at: string
   completed_at: string | null
+  children?: Task[]
 }
 
 export interface Export {
