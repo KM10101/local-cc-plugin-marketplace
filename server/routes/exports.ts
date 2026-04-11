@@ -17,14 +17,61 @@ function uuid() { return crypto.randomUUID() }
 export function exportsRouter(db: Db) {
   const router = Router()
 
-  router.get('/', (_req, res) => {
-    res.json(db.prepare(`SELECT * FROM exports ORDER BY created_at DESC`).all())
+  router.get('/', (req, res) => {
+    const search = req.query.search as string | undefined
+    const allExports = db.prepare(`SELECT * FROM exports ORDER BY created_at DESC`).all() as any[]
+
+    if (!search) {
+      return res.json(allExports)
+    }
+
+    const matching = allExports.filter(exp => {
+      let content: Record<string, string[]>
+      try {
+        content = JSON.parse(exp.selected_content)
+      } catch {
+        return false
+      }
+      for (const pluginIds of Object.values(content)) {
+        for (const pid of pluginIds) {
+          const plugin = db.prepare(`SELECT id FROM plugins WHERE id=? AND name LIKE ?`).get(pid, `%${search}%`)
+          if (plugin) return true
+        }
+      }
+      return false
+    })
+
+    res.json(matching)
   })
 
   router.get('/:id', (req, res) => {
-    const exp = db.prepare(`SELECT * FROM exports WHERE id=?`).get(req.params.id)
+    const exp = db.prepare(`SELECT * FROM exports WHERE id=?`).get(req.params.id) as any
     if (!exp) return res.status(404).json({ error: 'Export not found' })
-    res.json(exp)
+
+    let content: Record<string, string[]>
+    try {
+      content = JSON.parse(exp.selected_content)
+    } catch {
+      content = {}
+    }
+
+    const plugins: any[] = []
+    for (const [mId, pluginIds] of Object.entries(content)) {
+      const marketplace = db.prepare(`SELECT name, branch, repo_url FROM marketplaces WHERE id = ?`).get(mId) as any
+      for (const pid of pluginIds as string[]) {
+        const plugin = db.prepare(`SELECT id, name, version, author, description, status FROM plugins WHERE id = ?`).get(pid) as any
+        if (plugin) {
+          plugins.push({
+            ...plugin,
+            marketplace_id: mId,
+            marketplace_name: marketplace?.name ?? 'Unknown',
+            marketplace_branch: marketplace?.branch ?? 'unknown',
+          })
+        }
+      }
+    }
+
+    res.json({ ...exp, plugins })
   })
 
   router.post('/', (req, res) => {
@@ -70,10 +117,13 @@ export function exportsRouter(db: Db) {
       }]
     })
 
-    const workerPath = join(__dirname, '..', 'workers', 'export-worker.js')
+    const workerJsPath = join(__dirname, '..', 'workers', 'export-worker.js')
+    const workerTsPath = workerJsPath.replace(/\.js$/, '.ts')
+    const useTs = !existsSync(workerJsPath) && existsSync(workerTsPath)
+    const workerPath = useTs ? workerTsPath : workerJsPath
     const worker = new Worker(workerPath, {
       workerData: { exportId, exportName, marketplaces: marketplacesInput, exportsDir: EXPORTS_DIR },
-      execArgv: ['--import', 'tsx/esm'],
+      execArgv: useTs ? ['--import', 'tsx/esm'] : [],
     })
 
     worker.on('message', (msg: ExportWorkerMessage) => {
