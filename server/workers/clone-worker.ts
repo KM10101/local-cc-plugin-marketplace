@@ -2,13 +2,18 @@ import { workerData, parentPort } from 'worker_threads'
 import { simpleGit } from 'simple-git'
 import { join } from 'path'
 import { existsSync } from 'fs'
-import { mkdir } from 'fs/promises'
+import { mkdir, rm } from 'fs/promises'
 import { parseMarketplaceJson } from '../services/plugin-service.js'
 
 export interface CloneWorkerInput {
-  marketplaceId: string
+  mode: 'marketplace' | 'plugin'
+  taskId: string
+  marketplaceId?: string
+  pluginId?: string
   sourceUrl: string
-  reposDir: string       // e.g. data/repos
+  branch?: string
+  reposDir?: string    // for marketplace mode
+  pluginDir?: string   // for plugin mode
 }
 
 export type CloneWorkerMessage =
@@ -39,8 +44,45 @@ async function getHeadSha(repoPath: string): Promise<string | null> {
   }
 }
 
-async function run() {
-  const { marketplaceId, sourceUrl, reposDir } = workerData as CloneWorkerInput
+async function isValidGitRepo(dir: string): Promise<boolean> {
+  if (!existsSync(join(dir, '.git'))) return false
+  try {
+    const git = simpleGit(dir)
+    await git.status()
+    return true
+  } catch { return false }
+}
+
+async function cloneOrPull(sourceUrl: string, targetDir: string, branch?: string): Promise<void> {
+  if (await isValidGitRepo(targetDir)) {
+    // Incremental update: fetch and pull
+    const git = simpleGit(targetDir)
+    await git.fetch('origin')
+    if (branch) {
+      try {
+        await git.checkout(branch)
+      } catch {
+        // Branch doesn't exist locally, create it tracking origin/branch
+        await git.checkoutBranch(branch, `origin/${branch}`)
+      }
+    }
+    await git.pull()
+  } else {
+    // Clean up incomplete clone if directory exists
+    if (existsSync(targetDir)) {
+      await rm(targetDir, { recursive: true, force: true })
+    }
+    // Fresh clone
+    const cloneOptions: string[] = []
+    if (branch) {
+      cloneOptions.push('--branch', branch)
+    }
+    await simpleGit().clone(sourceUrl, targetDir, cloneOptions)
+  }
+}
+
+async function runMarketplace() {
+  const { marketplaceId, sourceUrl, branch, reposDir } = workerData as CloneWorkerInput
 
   if (!marketplaceId || !sourceUrl || !reposDir) {
     post({ type: 'error', message: 'Invalid workerData: marketplaceId, sourceUrl, and reposDir are required' })
@@ -50,18 +92,12 @@ async function run() {
   const marketplaceDir = join(reposDir, 'marketplaces', marketplaceId)
 
   try {
-    // Step 1: Clone marketplace repo
-    post({ type: 'progress', progress: 5, message: `Cloning marketplace from ${sourceUrl}` })
+    // Step 1: Clone/pull marketplace repo
+    post({ type: 'progress', progress: 5, message: `Cloning marketplace from ${sourceUrl} (branch: ${branch || 'default'})` })
 
     await mkdir(join(reposDir, 'marketplaces'), { recursive: true })
 
-    if (existsSync(join(marketplaceDir, '.git'))) {
-      // Already cloned — pull latest
-      const git = simpleGit(marketplaceDir)
-      await git.pull()
-    } else {
-      await simpleGit().clone(sourceUrl, marketplaceDir)
-    }
+    await cloneOrPull(sourceUrl, marketplaceDir, branch)
 
     post({ type: 'progress', progress: 40, message: 'Marketplace cloned, reading plugin list' })
 
@@ -118,12 +154,7 @@ async function run() {
       }
 
       try {
-        if (existsSync(join(pluginDir, '.git'))) {
-          const git = simpleGit(pluginDir)
-          await git.pull()
-        } else {
-          await simpleGit().clone(plugin.source_url, pluginDir)
-        }
+        await cloneOrPull(plugin.source_url, pluginDir)
         const sha = await getHeadSha(pluginDir)
         results.push({
           name: plugin.name,
@@ -158,4 +189,36 @@ async function run() {
   }
 }
 
-run()
+async function runPlugin() {
+  const { sourceUrl, branch, pluginDir, pluginId } = workerData as CloneWorkerInput
+
+  if (!sourceUrl || !pluginDir) {
+    post({ type: 'error', message: 'Invalid workerData: sourceUrl and pluginDir are required' })
+    return
+  }
+
+  try {
+    post({ type: 'progress', progress: 10, message: `Cloning plugin from ${sourceUrl} (branch: ${branch || 'default'})` })
+
+    await mkdir(pluginDir, { recursive: true })
+
+    await cloneOrPull(sourceUrl, pluginDir, branch)
+
+    post({ type: 'progress', progress: 90, message: 'Plugin cloned, reading commit SHA' })
+
+    const sha = await getHeadSha(pluginDir)
+
+    post({ type: 'done', gitSha: sha ?? '', plugins: [] })
+  } catch (err: any) {
+    post({ type: 'error', message: err.message ?? String(err) })
+  }
+}
+
+// Entry point: dispatch based on mode
+const mode = (workerData as CloneWorkerInput)?.mode
+if (mode === 'plugin') {
+  runPlugin()
+} else {
+  // Default to marketplace mode for backwards compatibility
+  runMarketplace()
+}
