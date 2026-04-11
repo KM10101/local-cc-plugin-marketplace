@@ -55,7 +55,7 @@ export function addMarketplace(
   const localPath = join(reposDir, 'marketplaces', marketplace_id)
 
   db.prepare(`INSERT INTO marketplaces (id, repo_url, branch, name, local_path, status, created_at)
-    VALUES (?, ?, ?, ?, ?, 'pending', ?)`
+    VALUES (?, ?, ?, ?, ?, 'cloning', ?)`
   ).run(marketplace_id, repoUrl, branch, repoNameFromUrl(repoUrl), localPath, now())
 
   db.prepare(`INSERT INTO tasks (id, parent_task_id, type, status, marketplace_id, repo_url, branch, progress, created_at)

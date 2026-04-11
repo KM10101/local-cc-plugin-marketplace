@@ -217,18 +217,22 @@ export class TaskScheduler {
         this.db.prepare(`UPDATE tasks SET status='completed', progress=100, completed_at=? WHERE id=?`)
           .run(now(), task.id)
         this.workers.delete(task.id)
+        // For marketplace tasks, persist clone results (updates marketplace status to 'ready')
+        if (task.type === 'clone_marketplace' && this.onMarketplaceDone) {
+          this.onMarketplaceDone(task, msg)
+        }
         this.updateParentStatus(task.parent_task_id)
         this.drainQueue()
       } else if (msg.type === 'error') {
         this.db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
           .run(msg.message, now(), task.id)
         this.workers.delete(task.id)
+        // For marketplace tasks, update marketplace status to 'error'
+        if (task.type === 'clone_marketplace' && task.marketplace_id) {
+          this.db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(task.marketplace_id)
+        }
         this.updateParentStatus(task.parent_task_id)
         this.drainQueue()
-      } else if (msg.type === 'marketplace_done') {
-        if (this.onMarketplaceDone) {
-          this.onMarketplaceDone(task, msg)
-        }
       } else if (msg.type === 'create_child_tasks') {
         // Insert child tasks and drain
         const childTasks = msg.tasks as Array<{
@@ -252,6 +256,9 @@ export class TaskScheduler {
       this.db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
         .run(err.message, now(), task.id)
       this.workers.delete(task.id)
+      if (task.type === 'clone_marketplace' && task.marketplace_id) {
+        this.db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(task.marketplace_id)
+      }
       this.updateParentStatus(task.parent_task_id)
       this.drainQueue()
     })
@@ -262,6 +269,9 @@ export class TaskScheduler {
         this.db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
           .run(`Worker exited with code ${code}`, now(), task.id)
         this.workers.delete(task.id)
+        if (task.type === 'clone_marketplace' && task.marketplace_id) {
+          this.db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(task.marketplace_id)
+        }
         this.updateParentStatus(task.parent_task_id)
         this.drainQueue()
       }
