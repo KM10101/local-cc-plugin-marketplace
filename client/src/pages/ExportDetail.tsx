@@ -1,27 +1,32 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api'
-import { PluginCard } from '../components/PluginCard'
 import { StatusBadge } from '../components/StatusBadge'
-import type { Export, Plugin } from '../types'
+import type { Export } from '../types'
+
+interface EnrichedPlugin {
+  id: string
+  name: string
+  version: string | null
+  author: string | null
+  description: string | null
+  status: string
+  marketplace_id: string
+  marketplace_name: string
+  marketplace_branch: string
+}
 
 export default function ExportDetail() {
   const { id } = useParams<{ id: string }>()
   const [exp, setExp] = useState<Export | null>(null)
-  const [plugins, setPlugins] = useState<Plugin[]>([])
+  const [plugins, setPlugins] = useState<EnrichedPlugin[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
-    api.exports.get(id).then(async (e) => {
+    api.exports.get(id).then((e) => {
       setExp(e)
-      const content: Record<string, string[]> = JSON.parse(e.selected_content)
-      const pluginIds = Object.values(content).flat()
-      const results = await Promise.allSettled(pluginIds.map(pid => api.plugins.get(pid)))
-      const allPlugins = results
-        .filter((r): r is PromiseFulfilledResult<Plugin> => r.status === 'fulfilled')
-        .map(r => r.value)
-      setPlugins(allPlugins)
+      setPlugins(e.plugins ?? [])
     }).catch((e: any) => setError(e.message))
   }, [id])
 
@@ -47,12 +52,52 @@ export default function ExportDetail() {
         </a>
       )}
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '24px 0 12px' }}>
         Included Plugins ({plugins.length})
       </h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-        {plugins.map(p => <PluginCard key={p.id} plugin={p} />)}
-      </div>
+      {plugins.length > 0 ? (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #374151', textAlign: 'left' }}>
+              <th style={{ padding: '8px 12px', color: '#9ca3af', fontWeight: 600 }}>Plugin</th>
+              <th style={{ padding: '8px 12px', color: '#9ca3af', fontWeight: 600 }}>Version</th>
+              <th style={{ padding: '8px 12px', color: '#9ca3af', fontWeight: 600 }}>Author</th>
+              <th style={{ padding: '8px 12px', color: '#9ca3af', fontWeight: 600 }}>Marketplace</th>
+              <th style={{ padding: '8px 12px', color: '#9ca3af', fontWeight: 600 }}>Branch</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plugins.map((p) => (
+              <tr key={p.id} style={{ borderBottom: '1px solid #1f2937' }}>
+                <td style={{ padding: '10px 12px' }}>
+                  <span style={{ fontWeight: 700 }}>{p.name}</span>
+                  {p.description && (
+                    <div style={{ color: '#9ca3af', fontSize: 12, marginTop: 2 }}>{p.description}</div>
+                  )}
+                </td>
+                <td style={{ padding: '10px 12px', color: '#d1d5db' }}>{p.version ?? '—'}</td>
+                <td style={{ padding: '10px 12px', color: '#d1d5db' }}>{p.author ?? '—'}</td>
+                <td style={{ padding: '10px 12px', color: '#d1d5db' }}>{p.marketplace_name}</td>
+                <td style={{ padding: '10px 12px' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 8px',
+                    background: '#1e3a5f',
+                    color: '#60a5fa',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  }}>
+                    {p.marketplace_branch}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p style={{ color: '#9ca3af', fontSize: 14 }}>No plugin details available.</p>
+      )}
     </div>
   )
 }
