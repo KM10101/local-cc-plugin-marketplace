@@ -92,4 +92,19 @@ describe('createDb', () => {
     const task = db.prepare(`SELECT status FROM tasks WHERE id = 't1'`).get() as { status: string }
     expect(task.status).toBe('queued')
   })
+
+  it('plugins table has source_format and subdir_path columns', () => {
+    const cols = db.prepare(`PRAGMA table_info(plugins)`).all() as { name: string }[]
+    const colNames = cols.map(c => c.name)
+    expect(colNames).toContain('source_format')
+    expect(colNames).toContain('subdir_path')
+  })
+
+  it('tasks table has source_format, subdir_path, and plugin_name columns', () => {
+    const cols = db.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[]
+    const colNames = cols.map(c => c.name)
+    expect(colNames).toContain('source_format')
+    expect(colNames).toContain('subdir_path')
+    expect(colNames).toContain('plugin_name')
+  })
 })

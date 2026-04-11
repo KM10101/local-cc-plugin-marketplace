@@ -32,6 +32,8 @@ export interface Plugin {
   license: string | null
   source_type: 'local' | 'external'
   source_url: string | null
+  source_format: string | null
+  subdir_path: string | null
   local_path: string
   status: PluginStatus
   git_commit_sha: string | null
@@ -47,6 +49,9 @@ export interface Task {
   repo_url: string | null
   branch: string | null
   plugin_id: string | null
+  plugin_name: string | null
+  source_format: string | null
+  subdir_path: string | null
   progress: number
   message: string | null
   created_at: string
