@@ -1,18 +1,54 @@
 import { Router } from 'express'
 import type { Db } from '../db.js'
 import type { TaskScheduler } from '../services/task-scheduler.js'
-import type { Task, TaskStatus } from '../types.js'
+import type { Task } from '../types.js'
 
-function isTerminal(status: TaskStatus): boolean {
+function isTerminal(status: string): boolean {
   return status === 'completed' || status === 'failed'
 }
 
 export function tasksRouter(db: Db, scheduler: TaskScheduler) {
   const router = Router()
 
-  router.get('/', (_req, res) => {
-    const tasks = db.prepare(`SELECT * FROM tasks ORDER BY created_at DESC`).all()
-    res.json(tasks)
+  router.get('/', (req, res) => {
+    const search = req.query.search as string | undefined
+    let sql = `SELECT * FROM tasks WHERE parent_task_id IS NULL`
+    const params: any[] = []
+    if (search) {
+      sql += ` AND repo_url LIKE ?`
+      params.push(`%${search}%`)
+    }
+    sql += ` ORDER BY created_at DESC`
+    const parents = db.prepare(sql).all(...params) as Task[]
+
+    const withChildren = parents.map(parent => {
+      const children = db.prepare(
+        `SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC`
+      ).all(parent.id) as Task[]
+      return { ...parent, children }
+    })
+    res.json(withChildren)
+  })
+
+  router.post('/:id/stop', (req, res) => {
+    const task = db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(req.params.id) as Task | undefined
+    if (!task) return res.status(404).json({ error: 'Task not found' })
+    scheduler.stopTask(req.params.id)
+    res.json({ ok: true })
+  })
+
+  router.post('/:id/resume', (req, res) => {
+    const task = db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(req.params.id) as Task | undefined
+    if (!task) return res.status(404).json({ error: 'Task not found' })
+    scheduler.resumeTask(req.params.id)
+    res.json({ ok: true })
+  })
+
+  router.delete('/:id', (req, res) => {
+    const task = db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(req.params.id) as Task | undefined
+    if (!task) return res.status(404).json({ error: 'Task not found' })
+    scheduler.deleteTask(req.params.id)
+    res.status(204).send()
   })
 
   router.get('/:id/events', (req, res) => {
@@ -26,8 +62,19 @@ export function tasksRouter(db: Db, scheduler: TaskScheduler) {
 
     const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`)
 
+    // Build payload with children if this is a parent task
+    const buildPayload = (t: Task) => {
+      if (!t.parent_task_id) {
+        const children = db.prepare(
+          `SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC`
+        ).all(t.id) as Task[]
+        return { ...t, children }
+      }
+      return t
+    }
+
     // Send current state immediately (reuse already-fetched task)
-    send(task)
+    send(buildPayload(task))
 
     if (isTerminal(task.status)) {
       res.end()
@@ -37,7 +84,7 @@ export function tasksRouter(db: Db, scheduler: TaskScheduler) {
     const interval = setInterval(() => {
       const updated = db.prepare(`SELECT * FROM tasks WHERE id=?`).get(req.params.id) as Task | undefined
       if (!updated) { clearInterval(interval); res.end(); return }
-      send(updated)
+      send(buildPayload(updated))
       if (isTerminal(updated.status)) {
         clearInterval(interval)
         res.end()
