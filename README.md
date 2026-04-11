@@ -5,6 +5,12 @@
 ## 主要功能
 
 - **下载 Marketplace**：输入 GitHub 地址，自动克隆 marketplace 仓库及其所有外部插件依赖
+- **多分支管理**：同一仓库支持最多 5 个分支，每个分支独立管理
+- **全源类型支持**：支持 `local`、`github`、`url`、`git-subdir`（sparse-checkout）四种插件源类型
+- **子任务并行克隆**：外部插件以独立子任务形式克隆，最多 20 个并发 git 操作
+- **实时进度**：显示 git 操作详细进度（Receiving objects、Resolving deltas 等）
+- **智能解析**：自动解析 `marketplace.json`，支持仅有 `plugin.json` 的单插件仓库
+- **元数据回退**：插件元数据优先从 `plugin.json` 读取，缺失时从 marketplace 条目回退
 - **浏览插件**：以卡片形式查看已下载的 marketplace 及插件详情（名称、版本、作者、描述等）
 - **导出离线包**：选择需要的 marketplace 和插件子集，打包为自包含的 zip 文件
 - **离线安装**：解压到内网机器，运行安装脚本，按提示在 Claude Code 中执行安装命令

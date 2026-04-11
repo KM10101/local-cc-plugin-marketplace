@@ -141,26 +141,15 @@ export default function MarketplaceList() {
           {search ? 'No marketplaces match your search.' : 'No marketplaces yet. Add one above.'}
         </p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {Array.from(groups.entries()).map(([repoUrl, items]) => (
-            <div key={repoUrl}>
-              {items.length > 1 && (
-                <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 8, fontWeight: 600 }}>
-                  {repoUrl} — {items.length} branches
-                </p>
-              )}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                {items.map(m => (
-                  <MarketplaceCard
-                    key={m.id}
-                    marketplace={m}
-                    onDelete={handleDeleteRequest}
-                    onRefresh={handleRefresh}
-                    refreshingIds={refreshingIds}
-                  />
-                ))}
-              </div>
-            </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+          {marketplaces.map(m => (
+            <MarketplaceCard
+              key={m.id}
+              marketplace={m}
+              onDelete={handleDeleteRequest}
+              onRefresh={handleRefresh}
+              refreshingIds={refreshingIds}
+            />
           ))}
         </div>
       )}

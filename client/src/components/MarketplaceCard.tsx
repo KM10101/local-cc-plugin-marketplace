@@ -15,7 +15,7 @@ export function MarketplaceCard({ marketplace: m, onDelete, onRefresh, refreshin
     <div
       onClick={() => nav(`/marketplace/${m.id}`)}
       style={{
-        border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, cursor: 'pointer',
+        border: '1px solid #e5e7eb', borderRadius: 8, padding: '12px 14px', cursor: 'pointer',
         background: '#fff', transition: 'box-shadow 0.15s',
       }}
       onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)')}
@@ -42,7 +42,7 @@ export function MarketplaceCard({ marketplace: m, onDelete, onRefresh, refreshin
           Updated {new Date(m.last_updated).toLocaleDateString()}
         </p>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
         <span style={{ color: '#6b7280', fontSize: 13 }}>{m.plugin_count ?? 0} plugins</span>
         <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
           <button
