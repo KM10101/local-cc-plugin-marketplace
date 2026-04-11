@@ -117,6 +117,9 @@ export class TaskScheduler {
     }
     this.terminateWorker(taskId)
 
+    // Clean up in-memory state
+    this.cleanupParsedData(taskId)
+
     // Delete children then parent from DB
     this.db.prepare(`DELETE FROM tasks WHERE parent_task_id=?`).run(taskId)
     this.db.prepare(`DELETE FROM tasks WHERE id=?`).run(taskId)
@@ -277,6 +280,8 @@ export class TaskScheduler {
         this.workers.delete(task.id)
 
         if (task.type === 'clone_marketplace') {
+          // Note: childCount > 0 because create_child_tasks is processed before done
+          // (worker_threads messages are delivered in order on the main thread)
           const childCount = (this.db.prepare(`SELECT COUNT(*) as cnt FROM tasks WHERE parent_task_id=?`).get(task.id) as { cnt: number }).cnt
 
           if (childCount > 0) {
