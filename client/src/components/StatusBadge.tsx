@@ -1,4 +1,4 @@
-type Status = 'pending' | 'cloning' | 'ready' | 'error' | 'running' | 'completed' | 'failed' | 'packaging'
+type Status = 'pending' | 'cloning' | 'ready' | 'error' | 'running' | 'completed' | 'failed' | 'packaging' | 'queued' | 'stopped'
 
 const colors: Record<Status, { bg: string; text: string }> = {
   pending:   { bg: '#f3f4f6', text: '#6b7280' },
@@ -9,6 +9,8 @@ const colors: Record<Status, { bg: string; text: string }> = {
   completed: { bg: '#dcfce7', text: '#15803d' },
   error:     { bg: '#fee2e2', text: '#dc2626' },
   failed:    { bg: '#fee2e2', text: '#dc2626' },
+  queued:    { bg: '#e0e7ff', text: '#4338ca' },
+  stopped:   { bg: '#fef3c7', text: '#b45309' },
 }
 
 export function StatusBadge({ status }: { status: Status | string }) {

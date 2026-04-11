@@ -5,9 +5,11 @@ import TaskList from './pages/TaskList'
 import ExportNew from './pages/ExportNew'
 import ExportList from './pages/ExportList'
 import ExportDetail from './pages/ExportDetail'
+import { ToastProvider } from './components/Toast'
 
 export default function App() {
   return (
+    <ToastProvider>
     <div style={{ fontFamily: 'sans-serif', maxWidth: 1100, margin: '0 auto', padding: '0 16px' }}>
       <nav style={{ borderBottom: '1px solid #e5e7eb', padding: '12px 0', display: 'flex', gap: 24, marginBottom: 24 }}>
         <strong style={{ marginRight: 16 }}>CC Plugin Marketplace</strong>
@@ -24,6 +26,7 @@ export default function App() {
         <Route path="/export/:id" element={<ExportDetail />} />
       </Routes>
     </div>
+    </ToastProvider>
   )
 }
 

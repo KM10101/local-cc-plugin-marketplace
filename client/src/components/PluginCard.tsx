@@ -35,11 +35,26 @@ export function PluginCard({ plugin: p }: { plugin: Plugin }) {
           ))}
         </div>
       )}
-      {p.homepage && (
-        <a href={p.homepage} target="_blank" rel="noreferrer"
-           style={{ display: 'block', marginTop: 8, fontSize: 12, color: '#2563eb' }}>
-          Homepage →
-        </a>
+      {(p.source_url || p.homepage) && (
+        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+          {p.source_url && (
+            <a href={p.source_url} target="_blank" rel="noreferrer"
+               style={{ fontSize: 12, color: '#2563eb' }}>
+              Repository →
+            </a>
+          )}
+          {p.homepage && (
+            <a href={p.homepage} target="_blank" rel="noreferrer"
+               style={{ fontSize: 12, color: '#2563eb' }}>
+              Homepage →
+            </a>
+          )}
+        </div>
+      )}
+      {p.created_at && (
+        <p style={{ color: '#9ca3af', fontSize: 11, margin: '6px 0 0' }}>
+          Added {new Date(p.created_at).toLocaleDateString()}
+        </p>
       )}
     </div>
   )

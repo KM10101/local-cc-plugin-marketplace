@@ -6,9 +6,10 @@ interface Props {
   marketplace: Marketplace
   onDelete: (id: string) => void
   onRefresh: (id: string) => void
+  refreshingIds?: Set<string>
 }
 
-export function MarketplaceCard({ marketplace: m, onDelete, onRefresh }: Props) {
+export function MarketplaceCard({ marketplace: m, onDelete, onRefresh, refreshingIds }: Props) {
   const nav = useNavigate()
   return (
     <div
@@ -28,7 +29,14 @@ export function MarketplaceCard({ marketplace: m, onDelete, onRefresh }: Props) 
         <StatusBadge status={m.status} />
       </div>
       {m.description && <p style={{ color: '#4b5563', fontSize: 14, margin: '8px 0 4px' }}>{m.description}</p>}
-      <p style={{ color: '#9ca3af', fontSize: 12, margin: '4px 0' }}>{m.repo_url}</p>
+      <p style={{ color: '#9ca3af', fontSize: 12, margin: '4px 0' }}>
+        {m.repo_url}
+        {m.branch && (
+          <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '1px 6px', borderRadius: 4, fontSize: 11, marginLeft: 4 }}>
+            {m.branch}
+          </span>
+        )}
+      </p>
       {m.last_updated && (
         <p style={{ color: '#9ca3af', fontSize: 12, margin: '2px 0' }}>
           Updated {new Date(m.last_updated).toLocaleDateString()}
@@ -37,7 +45,13 @@ export function MarketplaceCard({ marketplace: m, onDelete, onRefresh }: Props) 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
         <span style={{ color: '#6b7280', fontSize: 13 }}>{m.plugin_count ?? 0} plugins</span>
         <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
-          <button onClick={() => onRefresh(m.id)} style={btnStyle('#dbeafe', '#1d4ed8')}>Refresh</button>
+          <button
+            onClick={() => onRefresh(m.id)}
+            disabled={refreshingIds?.has(m.id)}
+            style={{ ...btnStyle('#dbeafe', '#1d4ed8'), opacity: refreshingIds?.has(m.id) ? 0.6 : 1 }}
+          >
+            {refreshingIds?.has(m.id) ? 'Refreshing...' : 'Refresh'}
+          </button>
           <button onClick={() => onDelete(m.id)} style={btnStyle('#fee2e2', '#dc2626')}>Delete</button>
         </div>
       </div>
