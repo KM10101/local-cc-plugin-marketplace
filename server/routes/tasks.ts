@@ -1,12 +1,13 @@
 import { Router } from 'express'
 import type { Db } from '../db.js'
+import type { TaskScheduler } from '../services/task-scheduler.js'
 import type { Task, TaskStatus } from '../types.js'
 
 function isTerminal(status: TaskStatus): boolean {
   return status === 'completed' || status === 'failed'
 }
 
-export function tasksRouter(db: Db) {
+export function tasksRouter(db: Db, scheduler: TaskScheduler) {
   const router = Router()
 
   router.get('/', (_req, res) => {
