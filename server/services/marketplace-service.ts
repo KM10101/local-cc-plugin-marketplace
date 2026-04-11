@@ -4,7 +4,7 @@ import { rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import type { Db } from '../db.js'
 import type { Marketplace } from '../types.js'
-import { readPluginJson, parseMarketplaceJson } from './plugin-service.js'
+import { readPluginJson, parseMarketplaceJson, type MarketplacePluginEntry } from './plugin-service.js'
 import type { ClonePluginResult } from '../workers/clone-worker.js'
 import type { TaskScheduler } from './task-scheduler.js'
 
@@ -146,7 +146,13 @@ export function deleteMarketplace(db: Db, id: string, reposDir: string): boolean
   return true
 }
 
-export async function persistCloneResults(db: Db, marketplace_id: string, gitSha: string, plugins: ClonePluginResult[]) {
+export async function persistCloneResults(
+  db: Db,
+  marketplace_id: string,
+  gitSha: string,
+  plugins: ClonePluginResult[],
+  pluginEntries: MarketplacePluginEntry[]
+) {
   const marketplace = db.prepare(`SELECT local_path FROM marketplaces WHERE id=?`).get(marketplace_id) as { local_path: string }
 
   let name = marketplace_id
@@ -162,23 +168,31 @@ export async function persistCloneResults(db: Db, marketplace_id: string, gitSha
   db.prepare(`UPDATE marketplaces SET name=?, description=?, owner=?, status='ready', git_commit_sha=?, last_updated=? WHERE id=?`)
     .run(name, description, owner, gitSha, now(), marketplace_id)
 
-  // Delete existing plugins (re-sync)
   db.prepare(`DELETE FROM plugins WHERE marketplace_id=?`).run(marketplace_id)
 
   for (const p of plugins) {
-    let pluginMeta = { version: null, author: null, author_url: null, description: null, keywords: null, homepage: null, license: null } as any
+    const entry = pluginEntries.find(e => e.name === p.name)
+
+    let pluginMeta = { name: '', version: null, author: null, author_url: null, description: null, keywords: null, homepage: null, license: null } as any
     try {
       pluginMeta = await readPluginJson(p.local_path)
-    } catch { /* use defaults */ }
+    } catch { /* use fallback */ }
+
+    const finalDescription = pluginMeta.description ?? entry?.fallback_description ?? null
+    const finalHomepage = pluginMeta.homepage ?? entry?.fallback_homepage ?? null
+    const finalKeywords = pluginMeta.keywords ?? entry?.fallback_keywords ?? null
+    const finalVersion = pluginMeta.version ?? entry?.fallback_version ?? null
+    const finalAuthor = pluginMeta.author ?? entry?.fallback_author ?? null
 
     const status = p.git_commit_sha !== null || p.source_type === 'local' ? 'ready' : 'error'
-    db.prepare(`INSERT INTO plugins (id, marketplace_id, name, version, author, author_url, description, keywords, homepage, license, source_type, source_url, local_path, status, git_commit_sha, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
+    db.prepare(`INSERT INTO plugins (id, marketplace_id, name, version, author, author_url, description, keywords, homepage, license, source_type, source_format, source_url, subdir_path, local_path, status, git_commit_sha, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
       uuid(), marketplace_id, p.name,
-      pluginMeta.version, pluginMeta.author, pluginMeta.author_url,
-      pluginMeta.description, pluginMeta.keywords, pluginMeta.homepage, pluginMeta.license,
-      p.source_type, p.source_url, p.local_path, status, p.git_commit_sha, now()
+      finalVersion, finalAuthor, pluginMeta.author_url,
+      finalDescription, finalKeywords, finalHomepage, pluginMeta.license,
+      p.source_type, p.source_format ?? null, p.source_url, p.subdir_path ?? null,
+      p.local_path, status, p.git_commit_sha, now()
     )
   }
 }

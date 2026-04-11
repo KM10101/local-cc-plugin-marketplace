@@ -193,4 +193,93 @@ describe('TaskScheduler', () => {
       scheduler.updateParentStatus(null)
     })
   })
+
+  describe('marketplace parsed data storage', () => {
+    it('stores marketplace parsed data for tasks with children', () => {
+      insertTask('p1', 'running')
+      scheduler.storeMarketplaceParsedData('p1', {
+        gitSha: 'abc123',
+        localPlugins: [],
+        pluginEntries: [],
+      })
+      const data = scheduler.getMarketplaceParsedData('p1')
+      expect(data).not.toBeNull()
+      expect(data!.gitSha).toBe('abc123')
+    })
+
+    it('stores child results', () => {
+      insertTask('p1', 'running')
+      scheduler.storeChildResult('p1', {
+        name: 'test-plugin',
+        source_type: 'external',
+        source_format: 'github',
+        source_url: 'https://github.com/o/r.git',
+        local_path: '/tmp/test',
+        relative_path: 'plugins/test-plugin',
+        git_commit_sha: 'def456',
+        subdir_path: null,
+      })
+      const results = scheduler.getChildResults('p1')
+      expect(results).toHaveLength(1)
+      expect(results[0].name).toBe('test-plugin')
+    })
+
+    it('cleans up parsed data and child results', () => {
+      scheduler.storeMarketplaceParsedData('p1', { gitSha: 'abc', localPlugins: [], pluginEntries: [] })
+      scheduler.storeChildResult('p1', { name: 'p', source_type: 'external', source_format: 'url', source_url: null, local_path: '/x', relative_path: 'plugins/p', git_commit_sha: null, subdir_path: null })
+      scheduler.cleanupParsedData('p1')
+      expect(scheduler.getMarketplaceParsedData('p1')).toBeNull()
+      expect(scheduler.getChildResults('p1')).toHaveLength(0)
+    })
+  })
+
+  describe('parent completion triggers onMarketplaceDone', () => {
+    it('calls onMarketplaceDone when all children complete', () => {
+      let capturedData: any = null
+
+      db.prepare(`INSERT INTO marketplaces (id, repo_url, branch, name, local_path, status, created_at)
+        VALUES ('m1', 'https://github.com/o/r.git', 'main', 'repo', '/tmp/m1', 'cloning', ?)`).run(now())
+
+      insertTask('p1', 'running')
+      insertTask('c1', 'completed', 'p1', 'clone_plugin')
+      insertTask('c2', 'completed', 'p1', 'clone_plugin')
+      db.prepare(`UPDATE tasks SET progress=100 WHERE parent_task_id='p1'`).run()
+
+      scheduler.storeMarketplaceParsedData('p1', {
+        gitSha: 'abc123',
+        localPlugins: [{ name: 'local-p', source_type: 'local', source_format: 'local', source_url: null, local_path: '/tmp/lp', relative_path: '.', git_commit_sha: null, subdir_path: null }],
+        pluginEntries: [],
+      })
+      scheduler.storeChildResult('p1', {
+        name: 'ext-p', source_type: 'external', source_format: 'github',
+        source_url: 'https://github.com/o/r.git', local_path: '/tmp/ep',
+        relative_path: 'plugins/ext-p', git_commit_sha: 'def456', subdir_path: null,
+      })
+
+      scheduler.onMarketplaceDone = (_task, data) => {
+        capturedData = data
+      }
+
+      scheduler.updateParentStatus('p1')
+
+      expect(capturedData).not.toBeNull()
+      expect(capturedData.gitSha).toBe('abc123')
+      expect(capturedData.plugins).toHaveLength(2)
+      expect(capturedData.plugins[0].name).toBe('local-p')
+      expect(capturedData.plugins[1].name).toBe('ext-p')
+    })
+
+    it('does not call onMarketplaceDone when children still running', () => {
+      let called = false
+
+      insertTask('p1', 'running')
+      insertTask('c1', 'completed', 'p1', 'clone_plugin')
+      insertTask('c2', 'running', 'p1', 'clone_plugin')
+
+      scheduler.onMarketplaceDone = () => { called = true }
+      scheduler.updateParentStatus('p1')
+
+      expect(called).toBe(false)
+    })
+  })
 })

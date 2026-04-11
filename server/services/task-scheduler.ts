@@ -4,19 +4,29 @@ import { fileURLToPath } from 'url'
 import { existsSync } from 'fs'
 import type { Db } from '../db.js'
 import type { Task } from '../types.js'
+import type { ClonePluginResult } from '../workers/clone-worker.js'
+import type { MarketplacePluginEntry } from '../services/plugin-service.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 function now() { return new Date().toISOString() }
+
+export interface MarketplaceParsedData {
+  gitSha: string
+  localPlugins: ClonePluginResult[]
+  pluginEntries: MarketplacePluginEntry[]
+}
 
 export class TaskScheduler {
   private db: Db
   private maxConcurrent: number
   private reposDir: string
   private workers: Map<string, Worker> = new Map()
+  private parsedDataMap: Map<string, MarketplaceParsedData> = new Map()
+  private childResultsMap: Map<string, ClonePluginResult[]> = new Map()
 
   /** Callback for marketplace-service to hook into when a marketplace clone finishes */
-  onMarketplaceDone: ((task: Task, msg: any) => void) | null = null
+  onMarketplaceDone: ((task: Task, data: { gitSha: string; plugins: ClonePluginResult[]; pluginEntries: MarketplacePluginEntry[] }) => void) | null = null
 
   constructor(db: Db, options?: { maxConcurrent?: number; reposDir?: string }) {
     this.db = db
@@ -126,7 +136,6 @@ export class TaskScheduler {
     const hasFailed = children.some(c => c.status === 'failed')
     const allStoppedOrQueued = children.every(c => c.status === 'stopped' || c.status === 'queued')
 
-    // Calculate blended progress
     const sumChildProgress = children.reduce((sum, c) => sum + c.progress, 0)
     const blended = Math.round((100 + sumChildProgress) / (1 + children.length))
 
@@ -134,13 +143,33 @@ export class TaskScheduler {
       this.db.prepare(`UPDATE tasks SET status='running', progress=? WHERE id=?`).run(blended, parentTaskId)
     } else if (allCompleted) {
       this.db.prepare(`UPDATE tasks SET status='completed', progress=100, completed_at=? WHERE id=?`).run(now(), parentTaskId)
+      this.triggerMarketplacePersistence(parentTaskId, parent)
     } else if (allStoppedOrQueued && !hasRunning) {
       this.db.prepare(`UPDATE tasks SET status='stopped', progress=? WHERE id=?`).run(blended, parentTaskId)
     } else if (hasFailed && !hasRunning) {
       this.db.prepare(`UPDATE tasks SET status='failed', progress=? WHERE id=?`).run(blended, parentTaskId)
+      this.triggerMarketplacePersistence(parentTaskId, parent)
     } else {
       this.db.prepare(`UPDATE tasks SET status='running', progress=? WHERE id=?`).run(blended, parentTaskId)
     }
+  }
+
+  private triggerMarketplacePersistence(parentTaskId: string, parent: Task): void {
+    if (parent.type !== 'clone_marketplace' || !this.onMarketplaceDone) return
+
+    const parsedData = this.parsedDataMap.get(parentTaskId)
+    if (!parsedData) return
+
+    const childResults = this.getChildResults(parentTaskId)
+    const allPlugins = [...parsedData.localPlugins, ...childResults]
+
+    this.onMarketplaceDone(parent, {
+      gitSha: parsedData.gitSha,
+      plugins: allPlugins,
+      pluginEntries: parsedData.pluginEntries,
+    })
+
+    this.cleanupParsedData(parentTaskId)
   }
 
   shutdown(): void {
@@ -148,6 +177,29 @@ export class TaskScheduler {
       try { worker.terminate() } catch { /* ignore */ }
     }
     this.workers.clear()
+  }
+
+  storeMarketplaceParsedData(parentTaskId: string, data: MarketplaceParsedData): void {
+    this.parsedDataMap.set(parentTaskId, data)
+  }
+
+  getMarketplaceParsedData(parentTaskId: string): MarketplaceParsedData | null {
+    return this.parsedDataMap.get(parentTaskId) ?? null
+  }
+
+  storeChildResult(parentTaskId: string, result: ClonePluginResult): void {
+    const existing = this.childResultsMap.get(parentTaskId) ?? []
+    existing.push(result)
+    this.childResultsMap.set(parentTaskId, existing)
+  }
+
+  getChildResults(parentTaskId: string): ClonePluginResult[] {
+    return this.childResultsMap.get(parentTaskId) ?? []
+  }
+
+  cleanupParsedData(parentTaskId: string): void {
+    this.parsedDataMap.delete(parentTaskId)
+    this.childResultsMap.delete(parentTaskId)
   }
 
   private terminateWorker(taskId: string): void {
@@ -190,8 +242,13 @@ export class TaskScheduler {
       }
     } else {
       // clone_plugin
-      const plugin = this.db.prepare(`SELECT local_path FROM plugins WHERE id=?`).get(task.plugin_id) as { local_path: string } | undefined
-      const pluginDir = plugin?.local_path ?? join(this.reposDir, 'plugins', task.plugin_id ?? 'unknown')
+      let pluginDir: string
+      if (task.parent_task_id && task.marketplace_id && task.plugin_name) {
+        pluginDir = join(this.reposDir, 'plugins', task.marketplace_id, task.plugin_name)
+      } else {
+        const plugin = this.db.prepare(`SELECT local_path FROM plugins WHERE id=?`).get(task.plugin_id) as { local_path: string } | undefined
+        pluginDir = plugin?.local_path ?? join(this.reposDir, 'plugins', task.plugin_id ?? 'unknown')
+      }
       workerDataPayload = {
         mode: 'plugin',
         taskId: task.id,
@@ -199,6 +256,9 @@ export class TaskScheduler {
         sourceUrl: task.repo_url,
         branch: task.branch,
         pluginDir,
+        pluginName: task.plugin_name,
+        sourceFormat: task.source_format,
+        subdirPath: task.subdir_path,
       }
     }
 
@@ -214,15 +274,63 @@ export class TaskScheduler {
         this.db.prepare(`UPDATE tasks SET progress=?, message=? WHERE id=?`)
           .run(msg.progress, msg.message, task.id)
       } else if (msg.type === 'done') {
-        this.db.prepare(`UPDATE tasks SET status='completed', progress=100, completed_at=? WHERE id=?`)
-          .run(now(), task.id)
         this.workers.delete(task.id)
-        // For marketplace tasks, persist clone results (updates marketplace status to 'ready')
-        if (task.type === 'clone_marketplace' && this.onMarketplaceDone) {
-          this.onMarketplaceDone(task, msg)
+
+        if (task.type === 'clone_marketplace') {
+          const childCount = (this.db.prepare(`SELECT COUNT(*) as cnt FROM tasks WHERE parent_task_id=?`).get(task.id) as { cnt: number }).cnt
+
+          if (childCount > 0) {
+            // Children exist — store parsed data, keep parent as 'running'
+            this.storeMarketplaceParsedData(task.id, {
+              gitSha: msg.gitSha,
+              localPlugins: msg.plugins ?? [],
+              pluginEntries: msg.pluginEntries ?? [],
+            })
+            this.db.prepare(`UPDATE tasks SET progress=50, message='Cloning external plugins...' WHERE id=?`).run(task.id)
+            this.drainQueue()
+          } else {
+            // No children — all local plugins, persist immediately
+            this.db.prepare(`UPDATE tasks SET status='completed', progress=100, completed_at=? WHERE id=?`)
+              .run(now(), task.id)
+            if (this.onMarketplaceDone) {
+              this.onMarketplaceDone(task, {
+                gitSha: msg.gitSha,
+                plugins: msg.plugins ?? [],
+                pluginEntries: msg.pluginEntries ?? [],
+              })
+            }
+            this.drainQueue()
+          }
+        } else {
+          // Plugin task (child or standalone)
+          this.db.prepare(`UPDATE tasks SET status='completed', progress=100, completed_at=? WHERE id=?`)
+            .run(now(), task.id)
+
+          // If this is a child of a marketplace task, store its result
+          if (task.parent_task_id && task.marketplace_id) {
+            const taskRow = this.db.prepare(`SELECT plugin_name, source_format, subdir_path FROM tasks WHERE id=?`).get(task.id) as any
+            const pluginName = taskRow?.plugin_name
+            const sourceFormat = taskRow?.source_format
+            const subdirPath = taskRow?.subdir_path
+            if (pluginName) {
+              const pluginDir = join(this.reposDir, 'plugins', task.marketplace_id, pluginName)
+              const localPath = subdirPath ? join(pluginDir, subdirPath) : pluginDir
+              this.storeChildResult(task.parent_task_id, {
+                name: pluginName,
+                source_type: 'external',
+                source_format: sourceFormat ?? 'url',
+                source_url: task.repo_url,
+                local_path: localPath,
+                relative_path: `plugins/${pluginName}`,
+                git_commit_sha: msg.gitSha ?? null,
+                subdir_path: subdirPath ?? null,
+              })
+            }
+          }
+
+          this.updateParentStatus(task.parent_task_id)
+          this.drainQueue()
         }
-        this.updateParentStatus(task.parent_task_id)
-        this.drainQueue()
       } else if (msg.type === 'error') {
         this.db.prepare(`UPDATE tasks SET status='failed', message=?, completed_at=? WHERE id=?`)
           .run(msg.message, now(), task.id)
@@ -234,7 +342,6 @@ export class TaskScheduler {
         this.updateParentStatus(task.parent_task_id)
         this.drainQueue()
       } else if (msg.type === 'create_child_tasks') {
-        // Insert child tasks and drain
         const childTasks = msg.tasks as Array<{
           id: string
           type: string
@@ -242,11 +349,14 @@ export class TaskScheduler {
           plugin_id?: string
           repo_url?: string
           branch?: string
+          plugin_name?: string
+          source_format?: string
+          subdir_path?: string
         }>
         for (const ct of childTasks) {
-          this.db.prepare(`INSERT INTO tasks (id, parent_task_id, type, status, marketplace_id, plugin_id, repo_url, branch, progress, created_at)
-            VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, 0, ?)`)
-            .run(ct.id, task.id, ct.type, ct.marketplace_id ?? null, ct.plugin_id ?? null, ct.repo_url ?? null, ct.branch ?? null, now())
+          this.db.prepare(`INSERT INTO tasks (id, parent_task_id, type, status, marketplace_id, plugin_id, repo_url, branch, plugin_name, source_format, subdir_path, progress, created_at)
+            VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, 0, ?)`)
+            .run(ct.id, task.id, ct.type, ct.marketplace_id ?? null, ct.plugin_id ?? null, ct.repo_url ?? null, ct.branch ?? null, ct.plugin_name ?? null, ct.source_format ?? null, ct.subdir_path ?? null, now())
         }
         this.drainQueue()
       }

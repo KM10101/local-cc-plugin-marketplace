@@ -18,9 +18,9 @@ export function createApp(dbPath = join(process.cwd(), 'data', 'db.sqlite')) {
   const db = createDb(dbPath)
   const scheduler = new TaskScheduler(db)
 
-  scheduler.onMarketplaceDone = async (task, msg) => {
+  scheduler.onMarketplaceDone = async (task, data) => {
     try {
-      await persistCloneResults(db, task.marketplace_id!, msg.gitSha, msg.plugins)
+      await persistCloneResults(db, task.marketplace_id!, data.gitSha, data.plugins, data.pluginEntries)
     } catch (err: any) {
       db.prepare(`UPDATE marketplaces SET status='error' WHERE id=?`).run(task.marketplace_id)
     }
