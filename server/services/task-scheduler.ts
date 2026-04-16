@@ -6,6 +6,7 @@ import type { Db } from '../db.js'
 import type { Task } from '../types.js'
 import type { ClonePluginResult } from '../workers/clone-worker.js'
 import type { MarketplacePluginEntry } from '../services/plugin-service.js'
+import { getProxyConfig } from './settings-service.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -231,6 +232,8 @@ export class TaskScheduler {
       return
     }
 
+    const proxy = getProxyConfig(this.db)
+
     // Build workerData based on task type
     let workerDataPayload: Record<string, any>
 
@@ -242,6 +245,7 @@ export class TaskScheduler {
         sourceUrl: task.repo_url,
         branch: task.branch,
         reposDir: this.reposDir,
+        proxy,
       }
     } else {
       // clone_plugin
@@ -262,6 +266,7 @@ export class TaskScheduler {
         pluginName: task.plugin_name,
         sourceFormat: task.source_format,
         subdirPath: task.subdir_path,
+        proxy,
       }
     }
 

@@ -19,6 +19,7 @@ export interface CloneWorkerInput {
   pluginName?: string
   sourceFormat?: string
   subdirPath?: string
+  proxy?: { enabled: boolean; url: string }
 }
 
 export type CloneWorkerMessage =
@@ -54,6 +55,17 @@ function post(msg: CloneWorkerMessage) {
   parentPort?.postMessage(msg)
 }
 
+function makeGit(dir?: string) {
+  const { proxy } = workerData as CloneWorkerInput
+  const configOpts = proxy?.enabled && proxy?.url
+    ? { config: [`http.proxy=${proxy.url}`, `https.proxy=${proxy.url}`] }
+    : undefined
+  if (dir) {
+    return configOpts ? simpleGit(dir, configOpts) : simpleGit(dir)
+  }
+  return configOpts ? simpleGit(configOpts) : simpleGit()
+}
+
 function parseGitProgress(line: string, baseProgress: number, maxProgress: number): { message: string; progress: number } | null {
   const trimmed = line.trim()
   if (!trimmed || trimmed.length < 3) return null
@@ -86,7 +98,7 @@ function parseGitProgress(line: string, baseProgress: number, maxProgress: numbe
 
 async function getHeadSha(repoPath: string): Promise<string | null> {
   try {
-    const git = simpleGit(repoPath)
+    const git = makeGit(repoPath)
     const log = await git.log({ maxCount: 1 })
     return log.latest?.hash ?? null
   } catch {
@@ -97,7 +109,7 @@ async function getHeadSha(repoPath: string): Promise<string | null> {
 async function isValidGitRepo(dir: string): Promise<boolean> {
   if (!existsSync(join(dir, '.git'))) return false
   try {
-    const git = simpleGit(dir)
+    const git = makeGit(dir)
     await git.status()
     return true
   } catch { return false }
@@ -105,7 +117,7 @@ async function isValidGitRepo(dir: string): Promise<boolean> {
 
 async function cloneOrPull(sourceUrl: string, targetDir: string, branch?: string, onProgress?: ProgressCallback): Promise<void> {
   if (await isValidGitRepo(targetDir)) {
-    const git = simpleGit(targetDir)
+    const git = makeGit(targetDir)
     if (onProgress) {
       git.outputHandler((_command, _stdout, stderr) => {
         stderr.on('data', (chunk: Buffer) => {
@@ -129,7 +141,7 @@ async function cloneOrPull(sourceUrl: string, targetDir: string, branch?: string
     if (existsSync(targetDir)) {
       await rm(targetDir, { recursive: true, force: true })
     }
-    const git = simpleGit()
+    const git = makeGit()
     if (onProgress) {
       git.outputHandler((_command, _stdout, stderr) => {
         stderr.on('data', (chunk: Buffer) => {
@@ -156,7 +168,7 @@ async function cloneSubdir(
   onProgress?: ProgressCallback
 ): Promise<void> {
   if (await isValidGitRepo(targetDir)) {
-    const git = simpleGit(targetDir)
+    const git = makeGit(targetDir)
     if (onProgress) {
       git.outputHandler((_command, _stdout, stderr) => {
         stderr.on('data', (chunk: Buffer) => {
@@ -183,7 +195,7 @@ async function cloneSubdir(
     await rm(targetDir, { recursive: true, force: true })
   }
 
-  const git = simpleGit()
+  const git = makeGit()
   if (onProgress) {
     git.outputHandler((_command, _stdout, stderr) => {
       stderr.on('data', (chunk: Buffer) => {
@@ -201,7 +213,7 @@ async function cloneSubdir(
   }
   await git.clone(sourceUrl, targetDir, cloneArgs)
 
-  const repoGit = simpleGit(targetDir)
+  const repoGit = makeGit(targetDir)
   await repoGit.raw(['sparse-checkout', 'set', subdirPath])
 }
 
