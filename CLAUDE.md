@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## Project Overview
 
 Offline Claude Code plugin marketplace manager. Downloads marketplace repos and plugins on a networked machine, exports them as zip packages for air-gapped installation.
