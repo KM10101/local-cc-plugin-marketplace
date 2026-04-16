@@ -5,6 +5,7 @@ import TaskList from './pages/TaskList'
 import ExportNew from './pages/ExportNew'
 import ExportList from './pages/ExportList'
 import ExportDetail from './pages/ExportDetail'
+import Settings from './pages/Settings'
 import { ToastProvider } from './components/Toast'
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <NavLink to="/" end style={navStyle}>Marketplaces</NavLink>
         <NavLink to="/tasks" style={navStyle}>Tasks</NavLink>
         <NavLink to="/export" style={navStyle}>Exports</NavLink>
+        <NavLink to="/settings" style={navStyle}>Settings</NavLink>
       </nav>
       <Routes>
         <Route path="/" element={<MarketplaceList />} />
@@ -24,6 +26,7 @@ export default function App() {
         <Route path="/export" element={<ExportList />} />
         <Route path="/export/new" element={<ExportNew />} />
         <Route path="/export/:id" element={<ExportDetail />} />
+        <Route path="/settings" element={<Settings />} />
       </Routes>
     </div>
     </ToastProvider>

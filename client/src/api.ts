@@ -52,4 +52,9 @@ export const api = {
     events: (id: string) => new EventSource(`/api/exports/${id}/events`),
     downloadUrl: (id: string) => `/api/exports/${id}/download`,
   },
+  settings: {
+    getProxy: () => req<{ enabled: boolean; url: string }>('GET', '/settings/proxy'),
+    updateProxy: (config: { enabled: boolean; url: string }) =>
+      req<void>('PUT', '/settings/proxy', config),
+  },
 }
