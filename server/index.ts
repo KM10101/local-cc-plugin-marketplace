@@ -9,6 +9,7 @@ import { marketplacesRouter } from './routes/marketplaces.js'
 import { pluginsRouter } from './routes/plugins.js'
 import { tasksRouter } from './routes/tasks.js'
 import { exportsRouter } from './routes/exports.js'
+import { settingsRouter } from './routes/settings.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -35,6 +36,7 @@ export function createApp(dbPath = join(process.cwd(), 'data', 'db.sqlite')) {
   app.use('/api/plugins', pluginsRouter(db))
   app.use('/api/tasks', tasksRouter(db, scheduler))
   app.use('/api/exports', exportsRouter(db))
+  app.use('/api/settings', settingsRouter(db))
 
   // Serve built client in production
   const clientDist = join(__dirname, '..', 'client')
