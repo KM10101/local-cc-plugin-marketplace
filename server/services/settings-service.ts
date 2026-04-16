@@ -21,14 +21,20 @@ export function setSetting(db: Db, key: string, value: string): void {
 }
 
 export function getProxyConfig(db: Db): ProxyConfig {
-  const enabled = getSetting(db, 'proxy.enabled') === 'true'
-  const url = getSetting(db, 'proxy.url') ?? ''
-  return { enabled, url }
+  try {
+    const enabled = getSetting(db, 'proxy.enabled') === 'true'
+    const url = getSetting(db, 'proxy.url') ?? ''
+    return { enabled, url }
+  } catch {
+    return { enabled: false, url: '' }
+  }
 }
 
 export function setProxyConfig(db: Db, config: ProxyConfig): void {
-  setSetting(db, 'proxy.enabled', config.enabled ? 'true' : 'false')
-  setSetting(db, 'proxy.url', config.url)
+  db.transaction(() => {
+    setSetting(db, 'proxy.enabled', config.enabled ? 'true' : 'false')
+    setSetting(db, 'proxy.url', config.url)
+  })()
 }
 
 export function validateProxyUrl(url: string): string | null {
