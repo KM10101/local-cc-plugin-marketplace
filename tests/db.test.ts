@@ -17,7 +17,7 @@ afterEach(async () => {
 })
 
 describe('createDb', () => {
-  it('creates all 4 tables', () => {
+  it('creates all 5 tables', () => {
     const tables = db.prepare(
       `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
     ).all() as { name: string }[]
@@ -26,6 +26,7 @@ describe('createDb', () => {
     expect(names).toContain('plugins')
     expect(names).toContain('tasks')
     expect(names).toContain('exports')
+    expect(names).toContain('settings')
   })
 
   it('is idempotent - calling createDb twice does not throw', () => {
@@ -106,5 +107,15 @@ describe('createDb', () => {
     expect(colNames).toContain('source_format')
     expect(colNames).toContain('subdir_path')
     expect(colNames).toContain('plugin_name')
+  })
+
+  it('settings table exists with key/value/updated_at columns', () => {
+    const cols = db.prepare(`PRAGMA table_info(settings)`).all() as { name: string; pk: number }[]
+    const colNames = cols.map(c => c.name)
+    expect(colNames).toContain('key')
+    expect(colNames).toContain('value')
+    expect(colNames).toContain('updated_at')
+    const keyCol = cols.find(c => c.name === 'key')
+    expect(keyCol?.pk).toBe(1)
   })
 })
